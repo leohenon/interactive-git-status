@@ -27,6 +27,7 @@ type app struct {
 	cursor    int
 	err       string
 	lastLines int
+	itemRows  []int
 }
 
 func main() {
@@ -35,10 +36,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	oldState, _ := exec.Command("stty", "-g").Output()
-	_ = exec.Command("stty", "raw", "-echo").Run()
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer tty.Close()
+
+	oldState, _ := stty(tty, "-g")
+	_ = runStty(tty, "cbreak", "-echo")
 	defer func() {
-		_ = exec.Command("stty", string(bytes.TrimSpace(oldState))).Run()
+		_ = runStty(tty, string(bytes.TrimSpace(oldState)))
 		fmt.Print("\033[?25h\033[0m\n")
 	}()
 
@@ -46,12 +54,15 @@ func main() {
 	a.refresh()
 	a.draw()
 
-	r := bufio.NewReader(os.Stdin)
+	r := bufio.NewReader(tty)
 	for {
 		b, err := r.ReadByte()
 		if err != nil {
 			return
 		}
+
+		oldCursor := a.cursor
+		redraw := false
 
 		switch b {
 		case 'q', 3:
@@ -62,12 +73,16 @@ func main() {
 			a.up()
 		case 'r':
 			a.refresh()
+			redraw = true
 		case ' ', '\t':
 			a.toggle()
+			redraw = true
 		case 's':
 			a.stage()
+			redraw = true
 		case 'u':
 			a.unstage()
+			redraw = true
 		case '\033':
 			// Arrow keys: ESC [ A/B
 			if next, _ := r.Peek(2); len(next) == 2 && next[0] == '[' {
@@ -81,13 +96,17 @@ func main() {
 			}
 		}
 
-		a.draw()
+		if redraw {
+			a.draw()
+		} else if oldCursor != a.cursor {
+			a.moveCursor(oldCursor)
+		}
 	}
 }
 
 func (a *app) draw() {
 	if a.lastLines > 0 {
-		fmt.Printf("\033[%dA\033[J", a.lastLines)
+		fmt.Printf("\r\033[%dA\033[J", a.lastLines)
 	}
 
 	out := a.render()
@@ -95,49 +114,84 @@ func (a *app) draw() {
 	a.lastLines = strings.Count(out, "\n")
 }
 
+func (a *app) moveCursor(oldCursor int) {
+	a.rewriteItem(oldCursor)
+	a.rewriteItem(a.cursor)
+}
+
+func (a *app) rewriteItem(index int) {
+	if index < 0 || index >= len(a.items) || index >= len(a.itemRows) {
+		return
+	}
+
+	row := a.itemRows[index]
+	if row == 0 || a.lastLines == 0 {
+		return
+	}
+
+	up := a.lastLines - row + 1
+	fmt.Printf("\r\033[%dA\033[K%s\033[%dB\r", up, a.itemLine(index), up)
+}
+
+func (a *app) itemLine(index int) string {
+	marker := " "
+	if index == a.cursor {
+		marker = ">"
+	}
+	it := a.items[index]
+	return fmt.Sprintf("%s %-10s %s", marker, statusName(it.status), it.path)
+}
+
 func (a *app) render() string {
 	var b strings.Builder
+	line := 0
+	a.itemRows = make([]int, len(a.items))
+
+	write := func(s string) {
+		b.WriteString(s)
+		line++
+	}
 
 	branch := gitOutput("branch", "--show-current")
 	if branch == "" {
 		branch = "HEAD"
 	}
-	fmt.Fprintf(&b, "On branch %s\n\n", branch)
+	write(fmt.Sprintf("On branch %s\n", branch))
+	write("\n")
 
 	unstagedItems := a.itemsIn(unstaged)
 	stagedItems := a.itemsIn(staged)
 
-	fmt.Fprintf(&b, "Unstaged changes (%d)\n", len(unstagedItems))
-	a.renderItems(&b, unstaged)
+	write(fmt.Sprintf("Unstaged changes (%d)\n", len(unstagedItems)))
+	a.renderItems(&b, &line, unstaged)
 	if len(unstagedItems) == 0 {
-		b.WriteString("  none\n")
+		write("  none\n")
 	}
 
-	b.WriteString("\n")
-	fmt.Fprintf(&b, "Staged changes (%d)\n", len(stagedItems))
-	a.renderItems(&b, staged)
+	write("\n")
+	write(fmt.Sprintf("Staged changes (%d)\n", len(stagedItems)))
+	a.renderItems(&b, &line, staged)
 	if len(stagedItems) == 0 {
-		b.WriteString("  none\n")
+		write("  none\n")
 	}
 
 	if a.err != "" {
-		fmt.Fprintf(&b, "\n%s\n", a.err)
+		write("\n")
+		write(fmt.Sprintf("%s\n", a.err))
 	}
 
 	return b.String()
 }
 
-func (a *app) renderItems(b *strings.Builder, which area) {
-	for i, it := range a.items {
-		if it.area != which {
+func (a *app) renderItems(b *strings.Builder, line *int, which area) {
+	for i := range a.items {
+		if a.items[i].area != which {
 			continue
 		}
 
-		marker := " "
-		if i == a.cursor {
-			marker = ">"
-		}
-		fmt.Fprintf(b, "%s %-10s %s\n", marker, statusName(it.status), it.path)
+		a.itemRows[i] = *line + 1
+		fmt.Fprintf(b, "%s\n", a.itemLine(i))
+		*line++
 	}
 }
 
@@ -280,6 +334,20 @@ func statusName(s string) string {
 func gitOutput(args ...string) string {
 	out, _ := exec.Command("git", args...).Output()
 	return strings.TrimSpace(string(out))
+}
+
+func stty(tty *os.File, args ...string) ([]byte, error) {
+	cmd := exec.Command("stty", args...)
+	cmd.Stdin = tty
+	return cmd.Output()
+}
+
+func runStty(tty *os.File, args ...string) error {
+	cmd := exec.Command("stty", args...)
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	return cmd.Run()
 }
 
 func isGitRepo() bool {
