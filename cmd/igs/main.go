@@ -77,6 +77,7 @@ func main() {
 			return
 		case '\r', '\n':
 			a.toggle()
+			drainInput(tty, r)
 			redraw = true
 		case 'j':
 			a.down()
@@ -89,9 +90,11 @@ func main() {
 			a.nextSection()
 		case 's':
 			a.stage()
+			drainInput(tty, r)
 			redraw = true
 		case 'u':
 			a.unstage()
+			drainInput(tty, r)
 			redraw = true
 		case '\033':
 			// Arrow keys: ESC [ A/B. Plain ESC exits.
@@ -415,6 +418,24 @@ func (a *app) nthInSection(section area, n int) int {
 		sectionIndex++
 	}
 	return 0
+}
+
+func drainInput(tty *os.File, r *bufio.Reader) {
+	for r.Buffered() > 0 {
+		_, _ = r.Discard(r.Buffered())
+	}
+
+	fd := int(tty.Fd())
+	_ = syscall.SetNonblock(fd, true)
+	defer syscall.SetNonblock(fd, false)
+
+	buf := make([]byte, 1024)
+	for {
+		n, _ := tty.Read(buf)
+		if n == 0 {
+			return
+		}
+	}
 }
 
 func readEscapeSequence(tty *os.File, r *bufio.Reader) string {
