@@ -51,12 +51,15 @@ func main() {
 	fmt.Print("\033[?25l")
 	defer func() {
 		_ = runStty(tty, string(bytes.TrimSpace(oldState)))
-		fmt.Print("\033[?25h\033[0m\n")
+		fmt.Print("\033[?25h\033[0m")
 	}()
 
 	a := &app{}
 	a.refresh()
 	a.draw()
+	if len(a.items) == 0 {
+		return
+	}
 
 	r := bufio.NewReader(tty)
 	for {
@@ -165,11 +168,19 @@ func (a *app) render() string {
 		branch = "HEAD"
 	}
 	write(fmt.Sprintf("On branch %s\n", branch))
+	if status := upstreamStatus(); status != "" {
+		write(status + "\n")
+	}
 	write("\n")
 
 	unstagedItems := a.itemsIn(unstaged)
 	untrackedItems := a.itemsIn(untracked)
 	stagedItems := a.itemsIn(staged)
+
+	if len(a.items) == 0 {
+		write("nothing to commit, working tree clean\n")
+		return b.String()
+	}
 
 	if len(untrackedItems) > 0 {
 		write(fmt.Sprintf("Untracked files (%d)\n", len(untrackedItems)))
@@ -399,6 +410,20 @@ func statusName(s string) string {
 func gitOutput(args ...string) string {
 	out, _ := exec.Command("git", args...).Output()
 	return strings.TrimSpace(string(out))
+}
+
+func upstreamStatus() string {
+	upstream := gitOutput("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if upstream == "" {
+		return ""
+	}
+
+	counts := strings.Fields(gitOutput("rev-list", "--left-right", "--count", "HEAD...@{u}"))
+	if len(counts) == 2 && counts[0] == "0" && counts[1] == "0" {
+		return fmt.Sprintf("Your branch is up to date with '%s'.", upstream)
+	}
+
+	return ""
 }
 
 func stty(tty *os.File, args ...string) ([]byte, error) {
