@@ -7,12 +7,15 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
 
 type area int
 
 const (
 	unstaged area = iota
+	untracked
 	staged
 )
 
@@ -67,6 +70,9 @@ func main() {
 		switch b {
 		case 'q', 3:
 			return
+		case '\r', '\n':
+			a.toggle()
+			redraw = true
 		case 'j':
 			a.down()
 		case 'k':
@@ -74,9 +80,8 @@ func main() {
 		case 'r':
 			a.refresh()
 			redraw = true
-		case ' ', '\t':
-			a.toggle()
-			redraw = true
+		case '\t':
+			a.nextSection()
 		case 's':
 			a.stage()
 			redraw = true
@@ -84,15 +89,14 @@ func main() {
 			a.unstage()
 			redraw = true
 		case '\033':
-			// Arrow keys: ESC [ A/B
-			if next, _ := r.Peek(2); len(next) == 2 && next[0] == '[' {
-				_, _ = r.Discard(2)
-				switch next[1] {
-				case 'A':
-					a.up()
-				case 'B':
-					a.down()
-				}
+			// Arrow keys: ESC [ A/B. Plain ESC exits.
+			switch readEscapeSequence(tty, r) {
+			case "[A":
+				a.up()
+			case "[B":
+				a.down()
+			default:
+				return
 			}
 		}
 
@@ -160,11 +164,19 @@ func (a *app) render() string {
 	write("\n")
 
 	unstagedItems := a.itemsIn(unstaged)
+	untrackedItems := a.itemsIn(untracked)
 	stagedItems := a.itemsIn(staged)
 
 	write(fmt.Sprintf("Unstaged changes (%d)\n", len(unstagedItems)))
 	a.renderItems(&b, &line, unstaged)
 	if len(unstagedItems) == 0 {
+		write("  none\n")
+	}
+
+	write("\n")
+	write(fmt.Sprintf("Untracked files (%d)\n", len(untrackedItems)))
+	a.renderItems(&b, &line, untracked)
+	if len(untrackedItems) == 0 {
 		write("  none\n")
 	}
 
@@ -224,6 +236,39 @@ func (a *app) down() {
 	}
 }
 
+func (a *app) nextSection() {
+	if len(a.items) == 0 {
+		return
+	}
+
+	sections := []area{unstaged, untracked, staged}
+	current := a.items[a.cursor].area
+	start := 0
+	for i, section := range sections {
+		if section == current {
+			start = i + 1
+			break
+		}
+	}
+
+	for offset := 0; offset < len(sections); offset++ {
+		section := sections[(start+offset)%len(sections)]
+		if index := a.firstIn(section); index >= 0 {
+			a.cursor = index
+			return
+		}
+	}
+}
+
+func (a *app) firstIn(which area) int {
+	for i, it := range a.items {
+		if it.area == which {
+			return i
+		}
+	}
+	return -1
+}
+
 func (a *app) toggle() {
 	if len(a.items) == 0 {
 		return
@@ -236,7 +281,7 @@ func (a *app) toggle() {
 }
 
 func (a *app) stage() {
-	if len(a.items) == 0 || a.items[a.cursor].area != unstaged {
+	if len(a.items) == 0 || a.items[a.cursor].area == staged {
 		return
 	}
 	a.run("add", "--", a.items[a.cursor].path)
@@ -264,6 +309,23 @@ func (a *app) run(args ...string) {
 		return
 	}
 	a.refresh()
+}
+
+func readEscapeSequence(tty *os.File, r *bufio.Reader) string {
+	if r.Buffered() >= 2 {
+		next, _ := r.Peek(2)
+		_, _ = r.Discard(2)
+		return string(next)
+	}
+
+	fd := int(tty.Fd())
+	_ = syscall.SetNonblock(fd, true)
+	defer syscall.SetNonblock(fd, false)
+
+	time.Sleep(10 * time.Millisecond)
+	buf := make([]byte, 2)
+	n, _ := tty.Read(buf)
+	return string(buf[:n])
 }
 
 func (a *app) itemsIn(which area) []item {
@@ -298,7 +360,7 @@ func statusItems() ([]item, error) {
 		}
 
 		if x == '?' && y == '?' {
-			items = append(items, item{area: unstaged, status: "??", path: path})
+			items = append(items, item{area: untracked, status: "??", path: path})
 			continue
 		}
 		if y != ' ' {
