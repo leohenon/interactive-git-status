@@ -47,15 +47,19 @@ func main() {
 	}
 	defer tty.Close()
 
+	a := &app{}
+
 	oldState, _ := stty(tty, "-g")
 	_ = runStty(tty, "cbreak", "-echo")
 	fmt.Print("\033[?25l")
 	defer func() {
+		if len(a.items) > 0 {
+			a.clearCursorMarker()
+		}
 		_ = runStty(tty, string(bytes.TrimSpace(oldState)))
 		fmt.Print("\033[?25h\033[0m")
 	}()
 
-	a := &app{}
 	a.refresh()
 	a.draw()
 	if len(a.items) == 0 {
@@ -145,7 +149,15 @@ func (a *app) moveCursor(oldCursor int) {
 	a.rewriteItem(a.cursor)
 }
 
+func (a *app) clearCursorMarker() {
+	a.rewriteItemAs(a.cursor, false)
+}
+
 func (a *app) rewriteItem(index int) {
+	a.rewriteItemAs(index, index == a.cursor)
+}
+
+func (a *app) rewriteItemAs(index int, selected bool) {
 	if index < 0 || index >= len(a.items) || index >= len(a.itemRows) {
 		return
 	}
@@ -156,12 +168,12 @@ func (a *app) rewriteItem(index int) {
 	}
 
 	up := a.lastLines - row + 1
-	fmt.Printf("\r\033[%dA\033[K%s\033[%dB\r", up, a.itemLine(index), up)
+	fmt.Printf("\r\033[%dA\033[K%s\033[%dB\r", up, a.itemLine(index, selected), up)
 }
 
-func (a *app) itemLine(index int) string {
+func (a *app) itemLine(index int, selected bool) string {
 	marker := " "
-	if index == a.cursor {
+	if selected {
 		marker = "›"
 	}
 
@@ -238,7 +250,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 		}
 
 		a.itemRows[i] = *line + 1
-		fmt.Fprintf(b, "%s\033[K\n", a.itemLine(i))
+		fmt.Fprintf(b, "%s\033[K\n", a.itemLine(i, i == a.cursor))
 		*line++
 	}
 }
