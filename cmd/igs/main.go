@@ -88,12 +88,24 @@ func main() {
 			redraw = true
 		case '\t':
 			a.nextSection()
+		case 'a':
+			a.toggleAll()
+			drainInput(tty, r)
+			redraw = true
 		case 's':
 			a.stage()
 			drainInput(tty, r)
 			redraw = true
+		case 'S':
+			a.stageAll()
+			drainInput(tty, r)
+			redraw = true
 		case 'u':
 			a.unstage()
+			drainInput(tty, r)
+			redraw = true
+		case 'U':
+			a.unstageAll()
 			drainInput(tty, r)
 			redraw = true
 		case '\033':
@@ -320,6 +332,33 @@ func (a *app) unstage() {
 	} else {
 		a.runKeepingSection(staged, "rm", "--cached", "-r", "--", a.items[a.cursor].path)
 	}
+}
+
+func (a *app) toggleAll() {
+	if a.currentSection() == staged {
+		a.unstageAll()
+	} else {
+		a.stageAll()
+	}
+}
+
+func (a *app) stageAll() {
+	a.runKeepingSection(a.currentSection(), "add", "-A")
+}
+
+func (a *app) unstageAll() {
+	if hasHead() {
+		a.runKeepingSection(a.currentSection(), "restore", "--staged", ":/")
+	} else {
+		a.runKeepingSection(a.currentSection(), "rm", "--cached", "-r", ":/")
+	}
+}
+
+func (a *app) currentSection() area {
+	if len(a.items) == 0 {
+		return untracked
+	}
+	return a.items[a.cursor].area
 }
 
 func (a *app) runKeepingSection(section area, args ...string) {
