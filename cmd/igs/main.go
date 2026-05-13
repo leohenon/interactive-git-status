@@ -48,6 +48,7 @@ func main() {
 
 	oldState, _ := stty(tty, "-g")
 	_ = runStty(tty, "cbreak", "-echo")
+	fmt.Print("\033[?25l")
 	defer func() {
 		_ = runStty(tty, string(bytes.TrimSpace(oldState)))
 		fmt.Print("\033[?25h\033[0m\n")
