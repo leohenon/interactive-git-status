@@ -148,18 +148,18 @@ func (a *app) rewriteItem(index int) {
 }
 
 func (a *app) itemLine(index int) string {
-	prefix := "    "
+	marker := " "
 	if index == a.cursor {
-		prefix = ">   "
+		marker = "›"
 	}
 
 	it := a.items[index]
 	status := statusName(it.status)
 	if status == "" {
-		return prefix + colorPath(it)
+		return marker + "   " + colorPath(it)
 	}
 
-	return fmt.Sprintf("%s%s   %s", prefix, colorStatus(it), colorPath(it))
+	return fmt.Sprintf("%s   %s   %s", marker, colorStatus(it), colorPath(it))
 }
 
 func (a *app) render() string {
