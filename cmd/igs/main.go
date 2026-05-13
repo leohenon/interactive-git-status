@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -298,7 +299,7 @@ func (a *app) stage() {
 	if len(a.items) == 0 || a.items[a.cursor].area == staged {
 		return
 	}
-	a.run("add", "--", a.items[a.cursor].path)
+	a.runKeepingSection(a.items[a.cursor].area, "add", "--", a.items[a.cursor].path)
 }
 
 func (a *app) unstage() {
@@ -306,13 +307,20 @@ func (a *app) unstage() {
 		return
 	}
 	if hasHead() {
-		a.run("restore", "--staged", "--", a.items[a.cursor].path)
+		a.runKeepingSection(staged, "restore", "--staged", "--", a.items[a.cursor].path)
 	} else {
-		a.run("rm", "--cached", "-r", "--", a.items[a.cursor].path)
+		a.runKeepingSection(staged, "rm", "--cached", "-r", "--", a.items[a.cursor].path)
 	}
 }
 
-func (a *app) run(args ...string) {
+func (a *app) runKeepingSection(section area, args ...string) {
+	oldPath := ""
+	oldIndex := a.cursor
+	oldSectionIndex := a.indexInSection(oldIndex, section)
+	if oldIndex >= 0 && oldIndex < len(a.items) {
+		oldPath = a.items[oldIndex].path
+	}
+
 	cmd := exec.Command("git", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -322,7 +330,85 @@ func (a *app) run(args ...string) {
 		}
 		return
 	}
+
 	a.refresh()
+	a.cursor = a.cursorAfterAction(section, oldSectionIndex, oldPath)
+}
+
+func (a *app) cursorAfterAction(section area, oldSectionIndex int, oldPath string) int {
+	items := a.itemsIn(section)
+	if len(items) > 0 {
+		if oldSectionIndex >= len(items) {
+			oldSectionIndex = len(items) - 1
+		}
+		if oldSectionIndex < 0 {
+			oldSectionIndex = 0
+		}
+		return a.nthInSection(section, oldSectionIndex)
+	}
+
+	for _, fallback := range fallbackSections(section) {
+		if index := a.firstIn(fallback); index >= 0 {
+			return index
+		}
+	}
+
+	if oldPath != "" {
+		for i, it := range a.items {
+			if it.path == oldPath {
+				return i
+			}
+		}
+	}
+
+	if a.cursor >= len(a.items) {
+		return len(a.items) - 1
+	}
+	if a.cursor < 0 {
+		return 0
+	}
+	return a.cursor
+}
+
+func fallbackSections(section area) []area {
+	switch section {
+	case untracked:
+		return []area{unstaged, staged}
+	case unstaged:
+		return []area{untracked, staged}
+	case staged:
+		return []area{unstaged, untracked}
+	default:
+		return []area{untracked, unstaged, staged}
+	}
+}
+
+func (a *app) indexInSection(index int, section area) int {
+	sectionIndex := 0
+	for i, it := range a.items {
+		if it.area != section {
+			continue
+		}
+		if i == index {
+			return sectionIndex
+		}
+		sectionIndex++
+	}
+	return 0
+}
+
+func (a *app) nthInSection(section area, n int) int {
+	sectionIndex := 0
+	for i, it := range a.items {
+		if it.area != section {
+			continue
+		}
+		if sectionIndex == n {
+			return i
+		}
+		sectionIndex++
+	}
+	return 0
 }
 
 func readEscapeSequence(tty *os.File, r *bufio.Reader) string {
@@ -385,7 +471,24 @@ func statusItems() ([]item, error) {
 		}
 	}
 
+	sort.SliceStable(items, func(i, j int) bool {
+		return areaOrder(items[i].area) < areaOrder(items[j].area)
+	})
+
 	return items, nil
+}
+
+func areaOrder(which area) int {
+	switch which {
+	case untracked:
+		return 0
+	case unstaged:
+		return 1
+	case staged:
+		return 2
+	default:
+		return 3
+	}
 }
 
 func statusName(s string) string {
