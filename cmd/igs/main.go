@@ -145,12 +145,18 @@ func (a *app) rewriteItem(index int) {
 }
 
 func (a *app) itemLine(index int) string {
-	marker := " "
+	prefix := "    "
 	if index == a.cursor {
-		marker = ">"
+		prefix = ">   "
 	}
+
 	it := a.items[index]
-	return fmt.Sprintf("%s %-10s %s", marker, statusName(it.status), it.path)
+	status := statusName(it.status)
+	if status == "" {
+		return prefix + colorPath(it)
+	}
+
+	return fmt.Sprintf("%s%s   %s", prefix, colorStatus(it), colorPath(it))
 }
 
 func (a *app) render() string {
@@ -491,20 +497,53 @@ func areaOrder(which area) int {
 	}
 }
 
+func colorStatus(it item) string {
+	return colorize(it, statusName(it.status))
+}
+
+func colorPath(it item) string {
+	return colorize(it, it.path)
+}
+
+func colorize(it item, text string) string {
+	color := ""
+	switch it.area {
+	case staged:
+		color = gitColor("status.added", "green")
+	case unstaged:
+		color = gitColor("status.changed", "red")
+	case untracked:
+		color = gitColor("status.untracked", "red")
+	}
+
+	if color == "" {
+		return text
+	}
+	return color + text + "\033[m"
+}
+
+func gitColor(slot, fallback string) string {
+	out, err := exec.Command("git", "config", "--get-color", slot, fallback).Output()
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
 func statusName(s string) string {
 	switch s {
 	case "M":
-		return "modified"
+		return "modified:"
 	case "A":
-		return "added"
+		return "new file:"
 	case "D":
-		return "deleted"
+		return "deleted:"
 	case "R":
-		return "renamed"
+		return "renamed:"
 	case "C":
-		return "copied"
+		return "copied:"
 	case "??":
-		return "untracked"
+		return ""
 	default:
 		return s
 	}
