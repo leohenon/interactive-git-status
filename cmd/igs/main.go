@@ -171,16 +171,15 @@ func (a *app) render() string {
 	untrackedItems := a.itemsIn(untracked)
 	stagedItems := a.itemsIn(staged)
 
+	if len(untrackedItems) > 0 {
+		write(fmt.Sprintf("Untracked files (%d)\n", len(untrackedItems)))
+		a.renderItems(&b, &line, untracked)
+		write("\n")
+	}
+
 	write(fmt.Sprintf("Unstaged changes (%d)\n", len(unstagedItems)))
 	a.renderItems(&b, &line, unstaged)
 	if len(unstagedItems) == 0 {
-		write("  none\n")
-	}
-
-	write("\n")
-	write(fmt.Sprintf("Untracked files (%d)\n", len(untrackedItems)))
-	a.renderItems(&b, &line, untracked)
-	if len(untrackedItems) == 0 {
 		write("  none\n")
 	}
 
@@ -245,7 +244,7 @@ func (a *app) nextSection() {
 		return
 	}
 
-	sections := []area{unstaged, untracked, staged}
+	sections := []area{untracked, unstaged, staged}
 	current := a.items[a.cursor].area
 	start := 0
 	for i, section := range sections {
