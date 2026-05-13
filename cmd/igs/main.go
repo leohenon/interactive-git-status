@@ -110,12 +110,14 @@ func main() {
 }
 
 func (a *app) draw() {
+	out := a.render()
+
 	if a.lastLines > 0 {
-		fmt.Printf("\r\033[%dA\033[J", a.lastLines)
+		fmt.Printf("\r\033[%dA", a.lastLines)
 	}
 
-	out := a.render()
 	fmt.Print(out)
+	fmt.Print("\033[J")
 	a.lastLines = strings.Count(out, "\n")
 }
 
@@ -153,7 +155,8 @@ func (a *app) render() string {
 	a.itemRows = make([]int, len(a.items))
 
 	write := func(s string) {
-		b.WriteString(s)
+		b.WriteString(strings.TrimSuffix(s, "\n"))
+		b.WriteString("\033[K\n")
 		line++
 	}
 
@@ -203,7 +206,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 		}
 
 		a.itemRows[i] = *line + 1
-		fmt.Fprintf(b, "%s\n", a.itemLine(i))
+		fmt.Fprintf(b, "%s\033[K\n", a.itemLine(i))
 		*line++
 	}
 }
