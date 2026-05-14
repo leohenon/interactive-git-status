@@ -16,8 +16,9 @@ import (
 type area int
 
 const (
-	unstaged area = iota
+	unmerged area = iota
 	untracked
+	unstaged
 	staged
 )
 
@@ -44,12 +45,14 @@ type colors struct {
 	added     string
 	changed   string
 	untracked string
+	unmerged  string
 }
 
 var gitColors = colors{
 	added:     "\033[32m",
 	changed:   "\033[31m",
 	untracked: "\033[31m",
+	unmerged:  "\033[31m",
 }
 
 func main() {
@@ -232,6 +235,7 @@ func (a *app) render() string {
 		write(fmt.Sprintf("Your stash currently has %d %s.\n", a.stash, plural(a.stash, "entry", "entries")))
 	}
 
+	unmergedItems := a.itemsIn(unmerged)
 	unstagedItems := a.itemsIn(unstaged)
 	untrackedItems := a.itemsIn(untracked)
 	stagedItems := a.itemsIn(staged)
@@ -245,6 +249,12 @@ func (a *app) render() string {
 	}
 
 	write("\n")
+	if len(unmergedItems) > 0 {
+		write(fmt.Sprintf("Unmerged paths (%d)\n", len(unmergedItems)))
+		a.renderItems(&b, &line, unmerged)
+		write("\n")
+	}
+
 	if len(untrackedItems) > 0 {
 		write(fmt.Sprintf("Untracked files (%d)\n", len(untrackedItems)))
 		a.renderItems(&b, &line, untracked)
@@ -323,7 +333,7 @@ func (a *app) nextSection() {
 		return
 	}
 
-	sections := []area{untracked, unstaged, staged}
+	sections := []area{unmerged, untracked, unstaged, staged}
 	current := a.items[a.cursor].area
 	start := 0
 	for i, section := range sections {
@@ -355,6 +365,9 @@ func (a *app) toggle() {
 	if len(a.items) == 0 {
 		return
 	}
+	if a.items[a.cursor].area == unmerged {
+		return
+	}
 	if a.items[a.cursor].area == staged {
 		a.unstage()
 	} else {
@@ -363,14 +376,14 @@ func (a *app) toggle() {
 }
 
 func (a *app) stage() {
-	if len(a.items) == 0 || a.items[a.cursor].area == staged {
+	if len(a.items) == 0 || a.items[a.cursor].area == staged || a.items[a.cursor].area == unmerged {
 		return
 	}
 	a.runKeepingSection(a.items[a.cursor].area, "add", "--", a.items[a.cursor].path)
 }
 
 func (a *app) unstage() {
-	if len(a.items) == 0 || a.items[a.cursor].area != staged {
+	if len(a.items) == 0 || a.items[a.cursor].area != staged || a.items[a.cursor].area == unmerged {
 		return
 	}
 	if hasHead() {
@@ -466,14 +479,16 @@ func (a *app) cursorAfterAction(section area, oldSectionIndex int, oldPath strin
 
 func fallbackSections(section area) []area {
 	switch section {
-	case untracked:
-		return []area{unstaged, staged}
-	case unstaged:
-		return []area{untracked, staged}
-	case staged:
-		return []area{unstaged, untracked}
-	default:
+	case unmerged:
 		return []area{untracked, unstaged, staged}
+	case untracked:
+		return []area{unstaged, staged, unmerged}
+	case unstaged:
+		return []area{untracked, staged, unmerged}
+	case staged:
+		return []area{unstaged, untracked, unmerged}
+	default:
+		return []area{unmerged, untracked, unstaged, staged}
 	}
 }
 
@@ -585,7 +600,11 @@ func statusState() (string, string, int, int, int, []item, error) {
 			if len(fields) >= 2 {
 				items = append(items, item{area: untracked, status: "??", path: fields[1]})
 			}
-		case '1', '2', 'u':
+		case 'u':
+			if parsed, ok := parseUnmergedLine(line); ok {
+				items = append(items, parsed)
+			}
+		case '1', '2':
 			parsed := parseChangedLine(line)
 			items = append(items, parsed...)
 		}
@@ -627,6 +646,14 @@ func parseSignedCount(value string) int {
 	return n
 }
 
+func parseUnmergedLine(line string) (item, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 11 {
+		return item{}, false
+	}
+	return item{area: unmerged, status: fields[1], path: fields[len(fields)-1]}, true
+}
+
 func parseChangedLine(line string) []item {
 	fields := strings.Fields(line)
 	if len(fields) < 9 {
@@ -653,12 +680,14 @@ func parseChangedLine(line string) []item {
 
 func areaOrder(which area) int {
 	switch which {
-	case untracked:
+	case unmerged:
 		return 0
-	case unstaged:
+	case untracked:
 		return 1
-	case staged:
+	case unstaged:
 		return 2
+	case staged:
+		return 3
 	default:
 		return 3
 	}
@@ -681,6 +710,8 @@ func colorize(it item, text string) string {
 		color = gitColors.changed
 	case untracked:
 		color = gitColors.untracked
+	case unmerged:
+		color = gitColors.unmerged
 	}
 
 	if color == "" {
@@ -711,6 +742,20 @@ func plural(n int, singular, plural string) string {
 
 func statusName(s string) string {
 	switch s {
+	case "DD":
+		return "both deleted:"
+	case "AU":
+		return "added by us:"
+	case "UD":
+		return "deleted by them:"
+	case "UA":
+		return "added by them:"
+	case "DU":
+		return "deleted by us:"
+	case "AA":
+		return "both added:"
+	case "UU":
+		return "both modified:"
 	case "M":
 		return "modified:"
 	case "A":
