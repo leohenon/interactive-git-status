@@ -31,6 +31,7 @@ type item struct {
 	area   area
 	status string
 	path   string
+	detail string
 }
 
 type app struct {
@@ -824,21 +825,44 @@ func parseChangedLine(line string) []item {
 	}
 
 	xy := fields[1]
+	submodule := fields[2]
 	path := fields[len(fields)-1]
 	if line[0] == '2' && len(fields) >= 10 {
 		path = fields[len(fields)-2]
 	}
+	detail := submoduleDetail(submodule)
 
 	var items []item
 	if len(xy) >= 2 {
 		if xy[1] != '.' {
-			items = append(items, item{area: unstaged, status: string(xy[1]), path: path})
+			items = append(items, item{area: unstaged, status: string(xy[1]), path: path, detail: detail})
 		}
 		if xy[0] != '.' {
-			items = append(items, item{area: staged, status: string(xy[0]), path: path})
+			items = append(items, item{area: staged, status: string(xy[0]), path: path, detail: detail})
 		}
 	}
 	return items
+}
+
+func submoduleDetail(submodule string) string {
+	if len(submodule) < 4 || submodule[0] != 'S' {
+		return ""
+	}
+
+	var details []string
+	if submodule[1] == 'C' {
+		details = append(details, "new commits")
+	}
+	if submodule[2] == 'M' {
+		details = append(details, "modified content")
+	}
+	if submodule[3] == 'U' {
+		details = append(details, "untracked content")
+	}
+	if len(details) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(details, ", ") + ")"
 }
 
 func areaOrder(which area) int {
@@ -863,7 +887,11 @@ func colorStatus(it item) string {
 }
 
 func colorPath(it item) string {
-	return colorize(it, it.path)
+	path := it.path
+	if it.detail != "" {
+		path += " " + it.detail
+	}
+	return colorize(it, path)
 }
 
 func colorize(it item, text string) string {
