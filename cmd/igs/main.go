@@ -42,6 +42,7 @@ type app struct {
 	ahead     int
 	behind    int
 	stash     int
+	merge     bool
 }
 
 type colors struct {
@@ -235,6 +236,11 @@ func (a *app) render() string {
 	if a.stash > 0 {
 		write(fmt.Sprintf("Your stash currently has %d %s.\n", a.stash, plural(a.stash, "entry", "entries")))
 	}
+	if a.merge {
+		write("You have unmerged paths.\n")
+		write("  (fix conflicts and run \"git commit\")\n")
+		write("  (use \"git merge --abort\" to abort the merge)\n")
+	}
 
 	unmergedItems := a.itemsIn(unmerged)
 	unstagedItems := a.itemsIn(unstaged)
@@ -323,7 +329,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 }
 
 func (a *app) refresh() {
-	branch, oid, initial, detached, upstream, ahead, behind, stash, items, err := statusState()
+	branch, oid, initial, detached, upstream, ahead, behind, stash, merge, items, err := statusState()
 	if err != nil {
 		a.err = err.Error()
 		return
@@ -337,6 +343,7 @@ func (a *app) refresh() {
 	a.ahead = ahead
 	a.behind = behind
 	a.stash = stash
+	a.merge = merge
 	a.items = items
 	a.err = ""
 	if a.cursor >= len(a.items) {
@@ -596,7 +603,7 @@ func (a *app) itemsIn(which area) []item {
 	return out
 }
 
-func statusState() (string, string, bool, bool, string, int, int, int, []item, error) {
+func statusState() (string, string, bool, bool, string, int, int, int, bool, []item, error) {
 	cmd := exec.Command("git", "status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -607,7 +614,7 @@ func statusState() (string, string, bool, bool, string, int, int, int, []item, e
 		if message == "" {
 			message = err.Error()
 		}
-		return "", "", false, false, "", 0, 0, 0, nil, fmt.Errorf("%s", message)
+		return "", "", false, false, "", 0, 0, 0, false, nil, fmt.Errorf("%s", message)
 	}
 
 	var branch string
@@ -648,7 +655,21 @@ func statusState() (string, string, bool, bool, string, int, int, int, []item, e
 		return areaOrder(items[i].area) < areaOrder(items[j].area)
 	})
 
-	return branch, oid, initial, detached, upstream, ahead, behind, stash, items, nil
+	return branch, oid, initial, detached, upstream, ahead, behind, stash, mergeInProgress(), items, nil
+}
+
+func mergeInProgress() bool {
+	path := strings.TrimSpace(gitOutput("rev-parse", "--git-path", "MERGE_HEAD"))
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func gitOutput(args ...string) string {
+	out, _ := exec.Command("git", args...).Output()
+	return string(out)
 }
 
 func parseHeader(line string, branch, oid *string, initial, detached *bool, upstream *string, ahead, behind, stash *int) {
