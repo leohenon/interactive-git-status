@@ -20,7 +20,12 @@ const (
 	untracked
 	unstaged
 	staged
+	ignored
 )
+
+type options struct {
+	ignored bool
+}
 
 type item struct {
 	area   area
@@ -43,6 +48,7 @@ type app struct {
 	behind    int
 	stash     int
 	operation operation
+	options   options
 }
 
 type operation string
@@ -60,6 +66,7 @@ type colors struct {
 	changed   string
 	untracked string
 	unmerged  string
+	ignored   string
 }
 
 var gitColors = colors{
@@ -67,10 +74,12 @@ var gitColors = colors{
 	changed:   "\033[31m",
 	untracked: "\033[31m",
 	unmerged:  "\033[31m",
+	ignored:   "\033[90m",
 }
 
 func main() {
-	a := &app{}
+	opts := parseOptions(os.Args[1:])
+	a := &app{options: opts}
 	a.refresh()
 	if a.err != "" {
 		fmt.Fprintln(os.Stderr, a.err)
@@ -170,6 +179,23 @@ func main() {
 	}
 }
 
+func parseOptions(args []string) options {
+	var opts options
+	for _, arg := range args {
+		switch arg {
+		case "--ignored":
+			opts.ignored = true
+		case "-h", "--help":
+			fmt.Println("usage: igs [--ignored]")
+			os.Exit(0)
+		default:
+			fmt.Fprintf(os.Stderr, "unknown option: %s\n", arg)
+			os.Exit(2)
+		}
+	}
+	return opts
+}
+
 func (a *app) draw() {
 	out := a.render()
 
@@ -254,6 +280,7 @@ func (a *app) render() string {
 	unstagedItems := a.itemsIn(unstaged)
 	untrackedItems := a.itemsIn(untracked)
 	stagedItems := a.itemsIn(staged)
+	ignoredItems := a.itemsIn(ignored)
 
 	if len(a.items) == 0 {
 		if a.initial || a.upstream != "" || a.stash > 0 || a.detached {
@@ -291,6 +318,12 @@ func (a *app) render() string {
 	a.renderItems(&b, &line, staged)
 	if len(stagedItems) == 0 {
 		write("  none\n")
+	}
+
+	if len(ignoredItems) > 0 {
+		write("\n")
+		write(fmt.Sprintf("Ignored files (%d)\n", len(ignoredItems)))
+		a.renderItems(&b, &line, ignored)
 	}
 
 	if a.err != "" {
@@ -368,7 +401,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 }
 
 func (a *app) refresh() {
-	branch, oid, initial, detached, upstream, ahead, behind, stash, operation, items, err := statusState()
+	branch, oid, initial, detached, upstream, ahead, behind, stash, operation, items, err := statusState(a.options)
 	if err != nil {
 		a.err = err.Error()
 		return
@@ -410,7 +443,7 @@ func (a *app) nextSection() {
 		return
 	}
 
-	sections := []area{unmerged, untracked, unstaged, staged}
+	sections := []area{unmerged, untracked, unstaged, staged, ignored}
 	current := a.items[a.cursor].area
 	start := 0
 	for i, section := range sections {
@@ -442,7 +475,7 @@ func (a *app) toggle() {
 	if len(a.items) == 0 {
 		return
 	}
-	if a.items[a.cursor].area == unmerged {
+	if a.items[a.cursor].area == unmerged || a.items[a.cursor].area == ignored {
 		return
 	}
 	if a.items[a.cursor].area == staged {
@@ -453,7 +486,7 @@ func (a *app) toggle() {
 }
 
 func (a *app) stage() {
-	if len(a.items) == 0 || a.items[a.cursor].area == staged || a.items[a.cursor].area == unmerged {
+	if len(a.items) == 0 || a.items[a.cursor].area == staged || a.items[a.cursor].area == unmerged || a.items[a.cursor].area == ignored {
 		return
 	}
 	a.runKeepingSection(a.items[a.cursor].area, "add", "--", a.items[a.cursor].path)
@@ -563,9 +596,11 @@ func fallbackSections(section area) []area {
 	case unstaged:
 		return []area{untracked, staged, unmerged}
 	case staged:
-		return []area{unstaged, untracked, unmerged}
+		return []area{unstaged, untracked, unmerged, ignored}
+	case ignored:
+		return []area{untracked, unstaged, staged, unmerged}
 	default:
-		return []area{unmerged, untracked, unstaged, staged}
+		return []area{unmerged, untracked, unstaged, staged, ignored}
 	}
 }
 
@@ -642,8 +677,12 @@ func (a *app) itemsIn(which area) []item {
 	return out
 }
 
-func statusState() (string, string, bool, bool, string, int, int, int, operation, []item, error) {
-	cmd := exec.Command("git", "status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal")
+func statusState(opts options) (string, string, bool, bool, string, int, int, int, operation, []item, error) {
+	args := []string{"status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal"}
+	if opts.ignored {
+		args = append(args, "--ignored=matching")
+	}
+	cmd := exec.Command("git", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(out))
@@ -675,6 +714,11 @@ func statusState() (string, string, bool, bool, string, int, int, int, operation
 		}
 
 		switch line[0] {
+		case '!':
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				items = append(items, item{area: ignored, status: "!!", path: fields[1]})
+			}
 		case '?':
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
@@ -807,6 +851,8 @@ func areaOrder(which area) int {
 		return 2
 	case staged:
 		return 3
+	case ignored:
+		return 4
 	default:
 		return 3
 	}
@@ -831,6 +877,8 @@ func colorize(it item, text string) string {
 		color = gitColors.untracked
 	case unmerged:
 		color = gitColors.unmerged
+	case ignored:
+		color = gitColors.ignored
 	}
 
 	if color == "" {
@@ -885,7 +933,7 @@ func statusName(s string) string {
 		return "renamed:"
 	case "C":
 		return "copied:"
-	case "??":
+	case "??", "!!":
 		return ""
 	default:
 		return s
