@@ -537,7 +537,7 @@ func (a *app) itemsIn(which area) []item {
 }
 
 func statusState() (string, string, []item, error) {
-	cmd := exec.Command("git", "status", "--porcelain=v1", "--branch")
+	cmd := exec.Command("git", "status", "--porcelain=v1", "--branch", "--untracked-files=normal")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(out))
