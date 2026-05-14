@@ -9,7 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
+
+	"golang.org/x/term"
 )
 
 type area int
@@ -210,7 +211,7 @@ func (a *app) render() string {
 
 	write := func(s string) {
 		b.WriteString(strings.TrimSuffix(s, "\n"))
-		b.WriteString("\033[K\n")
+		b.WriteString("\033[K\r\n")
 		line++
 	}
 
@@ -267,7 +268,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 		}
 
 		a.itemRows[i] = *line + 1
-		fmt.Fprintf(b, "%s\033[K\n", a.itemLine(i, i == a.cursor))
+		fmt.Fprintf(b, "%s\033[K\r\n", a.itemLine(i, i == a.cursor))
 		*line++
 	}
 }
@@ -662,45 +663,15 @@ func statusName(s string) string {
 	}
 }
 
-func enableInputMode(tty *os.File) (*syscall.Termios, error) {
-	oldState, err := getTermios(tty)
-	if err != nil {
-		return nil, err
-	}
-
-	newState := *oldState
-	newState.Lflag &^= syscall.ICANON | syscall.ECHO
-	newState.Cc[syscall.VMIN] = 1
-	newState.Cc[syscall.VTIME] = 0
-
-	if err := setTermios(tty, &newState); err != nil {
-		return nil, err
-	}
-	return oldState, nil
+func enableInputMode(tty *os.File) (*term.State, error) {
+	return term.MakeRaw(int(tty.Fd()))
 }
 
-func restoreInputMode(tty *os.File, state *syscall.Termios) error {
+func restoreInputMode(tty *os.File, state *term.State) error {
 	if state == nil {
 		return nil
 	}
-	return setTermios(tty, state)
-}
-
-func getTermios(tty *os.File) (*syscall.Termios, error) {
-	termios := &syscall.Termios{}
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, tty.Fd(), uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(termios)))
-	if errno != 0 {
-		return nil, errno
-	}
-	return termios, nil
-}
-
-func setTermios(tty *os.File, termios *syscall.Termios) error {
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, tty.Fd(), uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(termios)))
-	if errno != 0 {
-		return errno
-	}
-	return nil
+	return term.Restore(int(tty.Fd()), state)
 }
 
 func isGitRepo() bool {
