@@ -35,6 +35,9 @@ type app struct {
 	lastLines int
 	itemRows  []int
 	branch    string
+	oid       string
+	initial   bool
+	detached  bool
 	upstream  string
 	ahead     int
 	behind    int
@@ -221,11 +224,9 @@ func (a *app) render() string {
 		line++
 	}
 
-	branch := a.branch
-	if branch == "" {
-		branch = "HEAD"
+	for _, line := range a.headerLines() {
+		write(line + "\n")
 	}
-	write(fmt.Sprintf("On branch %s\n", branch))
 	if a.upstream != "" {
 		for _, line := range branchStatusLines(a.upstream, a.ahead, a.behind) {
 			write(line + "\n")
@@ -241,10 +242,14 @@ func (a *app) render() string {
 	stagedItems := a.itemsIn(staged)
 
 	if len(a.items) == 0 {
-		if a.upstream != "" || a.stash > 0 {
+		if a.initial || a.upstream != "" || a.stash > 0 || a.detached {
 			write("\n")
 		}
-		write("nothing to commit, working tree clean\n")
+		if a.initial {
+			write("nothing to commit (create/copy files and use \"git add\" to track)\n")
+		} else {
+			write("nothing to commit, working tree clean\n")
+		}
 		return b.String()
 	}
 
@@ -282,6 +287,29 @@ func (a *app) render() string {
 	return b.String()
 }
 
+func (a *app) headerLines() []string {
+	if a.detached {
+		at := a.oid
+		if len(at) > 7 {
+			at = at[:7]
+		}
+		if at == "" {
+			return []string{"HEAD detached"}
+		}
+		return []string{fmt.Sprintf("HEAD detached at %s", at)}
+	}
+
+	branch := a.branch
+	if branch == "" {
+		branch = "HEAD"
+	}
+	lines := []string{fmt.Sprintf("On branch %s", branch)}
+	if a.initial {
+		lines = append(lines, "", "No commits yet")
+	}
+	return lines
+}
+
 func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 	for i := range a.items {
 		if a.items[i].area != which {
@@ -295,13 +323,16 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 }
 
 func (a *app) refresh() {
-	branch, upstream, ahead, behind, stash, items, err := statusState()
+	branch, oid, initial, detached, upstream, ahead, behind, stash, items, err := statusState()
 	if err != nil {
 		a.err = err.Error()
 		return
 	}
 
 	a.branch = branch
+	a.oid = oid
+	a.initial = initial
+	a.detached = detached
 	a.upstream = upstream
 	a.ahead = ahead
 	a.behind = behind
@@ -565,7 +596,7 @@ func (a *app) itemsIn(which area) []item {
 	return out
 }
 
-func statusState() (string, string, int, int, int, []item, error) {
+func statusState() (string, string, bool, bool, string, int, int, int, []item, error) {
 	cmd := exec.Command("git", "status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -576,10 +607,13 @@ func statusState() (string, string, int, int, int, []item, error) {
 		if message == "" {
 			message = err.Error()
 		}
-		return "", "", 0, 0, 0, nil, fmt.Errorf("%s", message)
+		return "", "", false, false, "", 0, 0, 0, nil, fmt.Errorf("%s", message)
 	}
 
 	var branch string
+	var oid string
+	var initial bool
+	var detached bool
 	var upstream string
 	var ahead int
 	var behind int
@@ -590,7 +624,7 @@ func statusState() (string, string, int, int, int, []item, error) {
 			continue
 		}
 		if strings.HasPrefix(line, "# ") {
-			parseHeader(line, &branch, &upstream, &ahead, &behind, &stash)
+			parseHeader(line, &branch, &oid, &initial, &detached, &upstream, &ahead, &behind, &stash)
 			continue
 		}
 
@@ -614,18 +648,28 @@ func statusState() (string, string, int, int, int, []item, error) {
 		return areaOrder(items[i].area) < areaOrder(items[j].area)
 	})
 
-	return branch, upstream, ahead, behind, stash, items, nil
+	return branch, oid, initial, detached, upstream, ahead, behind, stash, items, nil
 }
 
-func parseHeader(line string, branch, upstream *string, ahead, behind, stash *int) {
+func parseHeader(line string, branch, oid *string, initial, detached *bool, upstream *string, ahead, behind, stash *int) {
 	fields := strings.Fields(line)
 	if len(fields) < 3 {
 		return
 	}
 
 	switch fields[1] {
+	case "branch.oid":
+		if fields[2] == "(initial)" {
+			*initial = true
+		} else {
+			*oid = fields[2]
+		}
 	case "branch.head":
-		*branch = fields[2]
+		if fields[2] == "(detached)" {
+			*detached = true
+		} else {
+			*branch = fields[2]
+		}
 	case "branch.upstream":
 		*upstream = fields[2]
 	case "branch.ab":
