@@ -48,11 +48,7 @@ func main() {
 	a := &app{}
 	a.refresh()
 	if a.err != "" {
-		if strings.Contains(a.err, "exit status 128") {
-			fmt.Fprintln(os.Stderr, "not a git repository")
-		} else {
-			fmt.Fprintln(os.Stderr, a.err)
-		}
+		fmt.Fprintln(os.Stderr, a.err)
 		os.Exit(1)
 	}
 	if len(a.items) == 0 {
@@ -536,9 +532,16 @@ func (a *app) itemsIn(which area) []item {
 
 func statusState() (string, string, []item, error) {
 	cmd := exec.Command("git", "status", "--porcelain=v1", "--branch")
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", "", nil, err
+		message := strings.TrimSpace(string(out))
+		if strings.Contains(message, "not a git repository") {
+			message = "not a git repository"
+		}
+		if message == "" {
+			message = err.Error()
+		}
+		return "", "", nil, fmt.Errorf("%s", message)
 	}
 
 	var branch string
