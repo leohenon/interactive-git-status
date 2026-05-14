@@ -50,6 +50,7 @@ type app struct {
 	ahead     int
 	behind    int
 	stash     int
+	sparse    string
 	operation operation
 	options   options
 }
@@ -275,6 +276,9 @@ func (a *app) render() string {
 	if a.stash > 0 {
 		write(fmt.Sprintf("Your stash currently has %d %s.\n", a.stash, plural(a.stash, "entry", "entries")))
 	}
+	if a.sparse != "" {
+		write(a.sparse + "\n")
+	}
 	for _, line := range a.operationLines() {
 		write(line + "\n")
 	}
@@ -404,7 +408,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 }
 
 func (a *app) refresh() {
-	branch, oid, initial, detached, upstream, gone, ahead, behind, stash, operation, items, err := statusState(a.options)
+	branch, oid, initial, detached, upstream, gone, ahead, behind, stash, sparse, operation, items, err := statusState(a.options)
 	if err != nil {
 		a.err = err.Error()
 		return
@@ -419,6 +423,7 @@ func (a *app) refresh() {
 	a.ahead = ahead
 	a.behind = behind
 	a.stash = stash
+	a.sparse = sparse
 	a.operation = operation
 	a.items = items
 	a.err = ""
@@ -681,7 +686,7 @@ func (a *app) itemsIn(which area) []item {
 	return out
 }
 
-func statusState(opts options) (string, string, bool, bool, string, bool, int, int, int, operation, []item, error) {
+func statusState(opts options) (string, string, bool, bool, string, bool, int, int, int, string, operation, []item, error) {
 	args := []string{"status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal"}
 	if opts.ignored {
 		args = append(args, "--ignored=matching")
@@ -696,7 +701,7 @@ func statusState(opts options) (string, string, bool, bool, string, bool, int, i
 		if message == "" {
 			message = err.Error()
 		}
-		return "", "", false, false, "", false, 0, 0, 0, operationNone, nil, fmt.Errorf("%s", message)
+		return "", "", false, false, "", false, 0, 0, 0, "", operationNone, nil, fmt.Errorf("%s", message)
 	}
 
 	var branch string
@@ -747,7 +752,36 @@ func statusState(opts options) (string, string, bool, bool, string, bool, int, i
 		gone = upstreamGone(upstream)
 	}
 
-	return branch, oid, initial, detached, upstream, gone, ahead, behind, stash, currentOperation(), items, nil
+	return branch, oid, initial, detached, upstream, gone, ahead, behind, stash, sparseStatusLine(), currentOperation(), items, nil
+}
+
+func sparseStatusLine() string {
+	if strings.TrimSpace(gitOutput("config", "--bool", "core.sparseCheckout")) != "true" {
+		return ""
+	}
+
+	out := gitOutput("ls-files", "-t")
+	if strings.TrimSpace(out) == "" {
+		return "You are in a sparse checkout."
+	}
+
+	total := 0
+	present := 0
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		total++
+		if !strings.HasPrefix(line, "S ") {
+			present++
+		}
+	}
+	if total == 0 {
+		return "You are in a sparse checkout."
+	}
+
+	percent := (present*100 + total/2) / total
+	return fmt.Sprintf("You are in a sparse checkout with %d%% of tracked files present.", percent)
 }
 
 func upstreamGone(upstream string) bool {
