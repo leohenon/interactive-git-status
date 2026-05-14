@@ -28,10 +28,11 @@ type options struct {
 }
 
 type item struct {
-	area   area
-	status string
-	path   string
-	detail string
+	area     area
+	status   string
+	path     string
+	origPath string
+	detail   string
 }
 
 type app struct {
@@ -827,18 +828,20 @@ func parseChangedLine(line string) []item {
 	xy := fields[1]
 	submodule := fields[2]
 	path := fields[len(fields)-1]
+	origPath := ""
 	if line[0] == '2' && len(fields) >= 10 {
 		path = fields[len(fields)-2]
+		origPath = fields[len(fields)-1]
 	}
 	detail := submoduleDetail(submodule)
 
 	var items []item
 	if len(xy) >= 2 {
 		if xy[1] != '.' {
-			items = append(items, item{area: unstaged, status: string(xy[1]), path: path, detail: detail})
+			items = append(items, item{area: unstaged, status: string(xy[1]), path: path, origPath: origPath, detail: detail})
 		}
 		if xy[0] != '.' {
-			items = append(items, item{area: staged, status: string(xy[0]), path: path, detail: detail})
+			items = append(items, item{area: staged, status: string(xy[0]), path: path, origPath: origPath, detail: detail})
 		}
 	}
 	return items
@@ -888,6 +891,9 @@ func colorStatus(it item) string {
 
 func colorPath(it item) string {
 	path := it.path
+	if it.origPath != "" {
+		path = it.origPath + " -> " + it.path
+	}
 	if it.detail != "" {
 		path += " " + it.detail
 	}
