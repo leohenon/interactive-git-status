@@ -35,6 +35,9 @@ type app struct {
 	itemRows  []int
 	branch    string
 	upstream  string
+	ahead     int
+	behind    int
+	stash     int
 }
 
 type colors struct {
@@ -221,7 +224,12 @@ func (a *app) render() string {
 	}
 	write(fmt.Sprintf("On branch %s\n", branch))
 	if a.upstream != "" {
-		write(fmt.Sprintf("Your branch is up to date with '%s'.\n", a.upstream))
+		for _, line := range branchStatusLines(a.upstream, a.ahead, a.behind) {
+			write(line + "\n")
+		}
+	}
+	if a.stash > 0 {
+		write(fmt.Sprintf("Your stash currently has %d %s.\n", a.stash, plural(a.stash, "entry", "entries")))
 	}
 
 	unstagedItems := a.itemsIn(unstaged)
@@ -229,7 +237,7 @@ func (a *app) render() string {
 	stagedItems := a.itemsIn(staged)
 
 	if len(a.items) == 0 {
-		if a.upstream != "" {
+		if a.upstream != "" || a.stash > 0 {
 			write("\n")
 		}
 		write("nothing to commit, working tree clean\n")
@@ -277,7 +285,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 }
 
 func (a *app) refresh() {
-	branch, upstream, items, err := statusState()
+	branch, upstream, ahead, behind, stash, items, err := statusState()
 	if err != nil {
 		a.err = err.Error()
 		return
@@ -285,6 +293,9 @@ func (a *app) refresh() {
 
 	a.branch = branch
 	a.upstream = upstream
+	a.ahead = ahead
+	a.behind = behind
+	a.stash = stash
 	a.items = items
 	a.err = ""
 	if a.cursor >= len(a.items) {
@@ -539,8 +550,8 @@ func (a *app) itemsIn(which area) []item {
 	return out
 }
 
-func statusState() (string, string, []item, error) {
-	cmd := exec.Command("git", "status", "--porcelain=v1", "--branch", "--untracked-files=normal")
+func statusState() (string, string, int, int, int, []item, error) {
+	cmd := exec.Command("git", "status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(out))
@@ -550,38 +561,33 @@ func statusState() (string, string, []item, error) {
 		if message == "" {
 			message = err.Error()
 		}
-		return "", "", nil, fmt.Errorf("%s", message)
+		return "", "", 0, 0, 0, nil, fmt.Errorf("%s", message)
 	}
 
 	var branch string
 	var upstream string
+	var ahead int
+	var behind int
+	var stash int
 	var items []item
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		if strings.HasPrefix(line, "## ") {
-			branch, upstream = parseBranchLine(strings.TrimPrefix(line, "## "))
+		if line == "" {
 			continue
 		}
-		if len(line) < 4 {
+		if strings.HasPrefix(line, "# ") {
+			parseHeader(line, &branch, &upstream, &ahead, &behind, &stash)
 			continue
 		}
 
-		x := line[0]
-		y := line[1]
-		path := line[3:]
-		if strings.Contains(path, " -> ") {
-			parts := strings.Split(path, " -> ")
-			path = parts[len(parts)-1]
-		}
-
-		if x == '?' && y == '?' {
-			items = append(items, item{area: untracked, status: "??", path: path})
-			continue
-		}
-		if y != ' ' {
-			items = append(items, item{area: unstaged, status: string(y), path: path})
-		}
-		if x != ' ' {
-			items = append(items, item{area: staged, status: string(x), path: path})
+		switch line[0] {
+		case '?':
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				items = append(items, item{area: untracked, status: "??", path: fields[1]})
+			}
+		case '1', '2', 'u':
+			parsed := parseChangedLine(line)
+			items = append(items, parsed...)
 		}
 	}
 
@@ -589,24 +595,60 @@ func statusState() (string, string, []item, error) {
 		return areaOrder(items[i].area) < areaOrder(items[j].area)
 	})
 
-	return branch, upstream, items, nil
+	return branch, upstream, ahead, behind, stash, items, nil
 }
 
-func parseBranchLine(line string) (string, string) {
-	if strings.HasPrefix(line, "No commits yet on ") {
-		return strings.TrimPrefix(line, "No commits yet on "), ""
+func parseHeader(line string, branch, upstream *string, ahead, behind, stash *int) {
+	fields := strings.Fields(line)
+	if len(fields) < 3 {
+		return
 	}
 
-	branch := line
-	upstream := ""
-	if before, after, ok := strings.Cut(line, "..."); ok {
-		branch = before
-		upstream = after
-		if i := strings.Index(upstream, " ["); i >= 0 {
-			upstream = ""
+	switch fields[1] {
+	case "branch.head":
+		*branch = fields[2]
+	case "branch.upstream":
+		*upstream = fields[2]
+	case "branch.ab":
+		if len(fields) >= 4 {
+			*ahead = parseSignedCount(fields[2])
+			*behind = parseSignedCount(fields[3])
+		}
+	case "stash":
+		*stash = parseSignedCount(fields[2])
+	}
+}
+
+func parseSignedCount(value string) int {
+	value = strings.TrimPrefix(value, "+")
+	value = strings.TrimPrefix(value, "-")
+	var n int
+	_, _ = fmt.Sscanf(value, "%d", &n)
+	return n
+}
+
+func parseChangedLine(line string) []item {
+	fields := strings.Fields(line)
+	if len(fields) < 9 {
+		return nil
+	}
+
+	xy := fields[1]
+	path := fields[len(fields)-1]
+	if line[0] == '2' && len(fields) >= 10 {
+		path = fields[len(fields)-2]
+	}
+
+	var items []item
+	if len(xy) >= 2 {
+		if xy[1] != '.' {
+			items = append(items, item{area: unstaged, status: string(xy[1]), path: path})
+		}
+		if xy[0] != '.' {
+			items = append(items, item{area: staged, status: string(xy[0]), path: path})
 		}
 	}
-	return branch, upstream
+	return items
 }
 
 func areaOrder(which area) int {
@@ -645,6 +687,26 @@ func colorize(it item, text string) string {
 		return text
 	}
 	return color + text + "\033[m"
+}
+
+func branchStatusLines(upstream string, ahead, behind int) []string {
+	switch {
+	case ahead == 0 && behind == 0:
+		return []string{fmt.Sprintf("Your branch is up to date with '%s'.", upstream)}
+	case ahead > 0 && behind == 0:
+		return []string{fmt.Sprintf("Your branch is ahead of '%s' by %d %s.", upstream, ahead, plural(ahead, "commit", "commits"))}
+	case ahead == 0 && behind > 0:
+		return []string{fmt.Sprintf("Your branch is behind '%s' by %d %s.", upstream, behind, plural(behind, "commit", "commits"))}
+	default:
+		return []string{fmt.Sprintf("Your branch and '%s' have diverged,", upstream), fmt.Sprintf("and have %d and %d different commits each, respectively.", ahead, behind)}
+	}
+}
+
+func plural(n int, singular, plural string) string {
+	if n == 1 {
+		return singular
+	}
+	return plural
 }
 
 func statusName(s string) string {
