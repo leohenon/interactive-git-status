@@ -110,7 +110,7 @@ func main() {
 			a.clearCursorMarker()
 		}
 		_ = restoreInputMode(tty, oldState)
-		fmt.Print("\033[?25h\033[0m")
+		fmt.Print("\033[?25h\033[0m\n")
 	}()
 
 	a.draw()
