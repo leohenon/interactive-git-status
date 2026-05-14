@@ -42,8 +42,18 @@ type app struct {
 	ahead     int
 	behind    int
 	stash     int
-	merge     bool
+	operation operation
 }
+
+type operation string
+
+const (
+	operationNone       operation = ""
+	operationMerge      operation = "merge"
+	operationRebase     operation = "rebase"
+	operationCherryPick operation = "cherry-pick"
+	operationRevert     operation = "revert"
+)
 
 type colors struct {
 	added     string
@@ -236,10 +246,8 @@ func (a *app) render() string {
 	if a.stash > 0 {
 		write(fmt.Sprintf("Your stash currently has %d %s.\n", a.stash, plural(a.stash, "entry", "entries")))
 	}
-	if a.merge {
-		write("You have unmerged paths.\n")
-		write("  (fix conflicts and run \"git commit\")\n")
-		write("  (use \"git merge --abort\" to abort the merge)\n")
+	for _, line := range a.operationLines() {
+		write(line + "\n")
 	}
 
 	unmergedItems := a.itemsIn(unmerged)
@@ -293,6 +301,37 @@ func (a *app) render() string {
 	return b.String()
 }
 
+func (a *app) operationLines() []string {
+	switch a.operation {
+	case operationMerge:
+		return []string{
+			"You have unmerged paths.",
+			"  (fix conflicts and run \"git commit\")",
+			"  (use \"git merge --abort\" to abort the merge)",
+		}
+	case operationRebase:
+		return []string{
+			"You are currently rebasing.",
+			"  (fix conflicts and then run \"git rebase --continue\")",
+			"  (use \"git rebase --abort\" to check out the original branch)",
+		}
+	case operationCherryPick:
+		return []string{
+			"You are currently cherry-picking.",
+			"  (fix conflicts and run \"git cherry-pick --continue\")",
+			"  (use \"git cherry-pick --abort\" to cancel the cherry-pick operation)",
+		}
+	case operationRevert:
+		return []string{
+			"You are currently reverting.",
+			"  (fix conflicts and run \"git revert --continue\")",
+			"  (use \"git revert --abort\" to cancel the revert operation)",
+		}
+	default:
+		return nil
+	}
+}
+
 func (a *app) headerLines() []string {
 	if a.detached {
 		at := a.oid
@@ -329,7 +368,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 }
 
 func (a *app) refresh() {
-	branch, oid, initial, detached, upstream, ahead, behind, stash, merge, items, err := statusState()
+	branch, oid, initial, detached, upstream, ahead, behind, stash, operation, items, err := statusState()
 	if err != nil {
 		a.err = err.Error()
 		return
@@ -343,7 +382,7 @@ func (a *app) refresh() {
 	a.ahead = ahead
 	a.behind = behind
 	a.stash = stash
-	a.merge = merge
+	a.operation = operation
 	a.items = items
 	a.err = ""
 	if a.cursor >= len(a.items) {
@@ -603,7 +642,7 @@ func (a *app) itemsIn(which area) []item {
 	return out
 }
 
-func statusState() (string, string, bool, bool, string, int, int, int, bool, []item, error) {
+func statusState() (string, string, bool, bool, string, int, int, int, operation, []item, error) {
 	cmd := exec.Command("git", "status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -614,7 +653,7 @@ func statusState() (string, string, bool, bool, string, int, int, int, bool, []i
 		if message == "" {
 			message = err.Error()
 		}
-		return "", "", false, false, "", 0, 0, 0, false, nil, fmt.Errorf("%s", message)
+		return "", "", false, false, "", 0, 0, 0, operationNone, nil, fmt.Errorf("%s", message)
 	}
 
 	var branch string
@@ -655,15 +694,30 @@ func statusState() (string, string, bool, bool, string, int, int, int, bool, []i
 		return areaOrder(items[i].area) < areaOrder(items[j].area)
 	})
 
-	return branch, oid, initial, detached, upstream, ahead, behind, stash, mergeInProgress(), items, nil
+	return branch, oid, initial, detached, upstream, ahead, behind, stash, currentOperation(), items, nil
 }
 
-func mergeInProgress() bool {
-	path := strings.TrimSpace(gitOutput("rev-parse", "--git-path", "MERGE_HEAD"))
-	if path == "" {
+func currentOperation() operation {
+	switch {
+	case gitPathExists("rebase-merge"), gitPathExists("rebase-apply"):
+		return operationRebase
+	case gitPathExists("CHERRY_PICK_HEAD"):
+		return operationCherryPick
+	case gitPathExists("REVERT_HEAD"):
+		return operationRevert
+	case gitPathExists("MERGE_HEAD"):
+		return operationMerge
+	default:
+		return operationNone
+	}
+}
+
+func gitPathExists(path string) bool {
+	resolved := strings.TrimSpace(gitOutput("rev-parse", "--git-path", path))
+	if resolved == "" {
 		return false
 	}
-	_, err := os.Stat(path)
+	_, err := os.Stat(resolved)
 	return err == nil
 }
 
