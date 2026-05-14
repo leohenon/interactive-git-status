@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 type area int
@@ -42,7 +42,11 @@ type colors struct {
 	untracked string
 }
 
-var gitColors colors
+var gitColors = colors{
+	added:     "\033[32m",
+	changed:   "\033[31m",
+	untracked: "\033[31m",
+}
 
 func main() {
 	a := &app{}
@@ -56,8 +60,6 @@ func main() {
 		return
 	}
 
-	gitColors = loadGitColors()
-
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -65,14 +67,17 @@ func main() {
 	}
 	defer tty.Close()
 
-	oldState, _ := stty(tty, "-g")
-	_ = runStty(tty, "cbreak", "-echo")
+	oldState, err := enableInputMode(tty)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	fmt.Print("\033[?25l")
 	defer func() {
 		if len(a.items) > 0 {
 			a.clearCursorMarker()
 		}
-		_ = runStty(tty, string(bytes.TrimSpace(oldState)))
+		_ = restoreInputMode(tty, oldState)
 		fmt.Print("\033[?25h\033[0m")
 	}()
 
@@ -638,22 +643,6 @@ func colorize(it item, text string) string {
 	return color + text + "\033[m"
 }
 
-func loadGitColors() colors {
-	return colors{
-		added:     gitColor("status.added", "green"),
-		changed:   gitColor("status.changed", "red"),
-		untracked: gitColor("status.untracked", "red"),
-	}
-}
-
-func gitColor(slot, fallback string) string {
-	out, err := exec.Command("git", "config", "--get-color", slot, fallback).Output()
-	if err != nil {
-		return ""
-	}
-	return string(out)
-}
-
 func statusName(s string) string {
 	switch s {
 	case "M":
@@ -673,18 +662,45 @@ func statusName(s string) string {
 	}
 }
 
-func stty(tty *os.File, args ...string) ([]byte, error) {
-	cmd := exec.Command("stty", args...)
-	cmd.Stdin = tty
-	return cmd.Output()
+func enableInputMode(tty *os.File) (*syscall.Termios, error) {
+	oldState, err := getTermios(tty)
+	if err != nil {
+		return nil, err
+	}
+
+	newState := *oldState
+	newState.Lflag &^= syscall.ICANON | syscall.ECHO
+	newState.Cc[syscall.VMIN] = 1
+	newState.Cc[syscall.VTIME] = 0
+
+	if err := setTermios(tty, &newState); err != nil {
+		return nil, err
+	}
+	return oldState, nil
 }
 
-func runStty(tty *os.File, args ...string) error {
-	cmd := exec.Command("stty", args...)
-	cmd.Stdin = tty
-	cmd.Stdout = tty
-	cmd.Stderr = tty
-	return cmd.Run()
+func restoreInputMode(tty *os.File, state *syscall.Termios) error {
+	if state == nil {
+		return nil
+	}
+	return setTermios(tty, state)
+}
+
+func getTermios(tty *os.File) (*syscall.Termios, error) {
+	termios := &syscall.Termios{}
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, tty.Fd(), uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(termios)))
+	if errno != 0 {
+		return nil, errno
+	}
+	return termios, nil
+}
+
+func setTermios(tty *os.File, termios *syscall.Termios) error {
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, tty.Fd(), uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(termios)))
+	if errno != 0 {
+		return errno
+	}
+	return nil
 }
 
 func isGitRepo() bool {
