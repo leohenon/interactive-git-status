@@ -223,17 +223,20 @@ func (a *app) render() string {
 	if a.upstream != "" {
 		write(fmt.Sprintf("Your branch is up to date with '%s'.\n", a.upstream))
 	}
-	write("\n")
 
 	unstagedItems := a.itemsIn(unstaged)
 	untrackedItems := a.itemsIn(untracked)
 	stagedItems := a.itemsIn(staged)
 
 	if len(a.items) == 0 {
+		if a.upstream != "" {
+			write("\n")
+		}
 		write("nothing to commit, working tree clean\n")
 		return b.String()
 	}
 
+	write("\n")
 	if len(untrackedItems) > 0 {
 		write(fmt.Sprintf("Untracked files (%d)\n", len(untrackedItems)))
 		a.renderItems(&b, &line, untracked)
