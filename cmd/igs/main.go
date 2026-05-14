@@ -32,13 +32,35 @@ type app struct {
 	err       string
 	lastLines int
 	itemRows  []int
+	branch    string
+	upstream  string
 }
 
+type colors struct {
+	added     string
+	changed   string
+	untracked string
+}
+
+var gitColors colors
+
 func main() {
-	if !isGitRepo() {
-		fmt.Fprintln(os.Stderr, "not a git repository")
+	a := &app{}
+	a.refresh()
+	if a.err != "" {
+		if strings.Contains(a.err, "exit status 128") {
+			fmt.Fprintln(os.Stderr, "not a git repository")
+		} else {
+			fmt.Fprintln(os.Stderr, a.err)
+		}
 		os.Exit(1)
 	}
+	if len(a.items) == 0 {
+		fmt.Print(a.render())
+		return
+	}
+
+	gitColors = loadGitColors()
 
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
@@ -46,8 +68,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer tty.Close()
-
-	a := &app{}
 
 	oldState, _ := stty(tty, "-g")
 	_ = runStty(tty, "cbreak", "-echo")
@@ -60,11 +80,7 @@ func main() {
 		fmt.Print("\033[?25h\033[0m")
 	}()
 
-	a.refresh()
 	a.draw()
-	if len(a.items) == 0 {
-		return
-	}
 
 	r := bufio.NewReader(tty)
 	for {
@@ -197,13 +213,13 @@ func (a *app) render() string {
 		line++
 	}
 
-	branch := gitOutput("branch", "--show-current")
+	branch := a.branch
 	if branch == "" {
 		branch = "HEAD"
 	}
 	write(fmt.Sprintf("On branch %s\n", branch))
-	if status := upstreamStatus(); status != "" {
-		write(status + "\n")
+	if a.upstream != "" {
+		write(fmt.Sprintf("Your branch is up to date with '%s'.\n", a.upstream))
 	}
 	write("\n")
 
@@ -256,12 +272,14 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 }
 
 func (a *app) refresh() {
-	items, err := statusItems()
+	branch, upstream, items, err := statusState()
 	if err != nil {
 		a.err = err.Error()
 		return
 	}
 
+	a.branch = branch
+	a.upstream = upstream
 	a.items = items
 	a.err = ""
 	if a.cursor >= len(a.items) {
@@ -516,15 +534,21 @@ func (a *app) itemsIn(which area) []item {
 	return out
 }
 
-func statusItems() ([]item, error) {
-	cmd := exec.Command("git", "status", "--porcelain=v1")
+func statusState() (string, string, []item, error) {
+	cmd := exec.Command("git", "status", "--porcelain=v1", "--branch")
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return "", "", nil, err
 	}
 
+	var branch string
+	var upstream string
 	var items []item
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+		if strings.HasPrefix(line, "## ") {
+			branch, upstream = parseBranchLine(strings.TrimPrefix(line, "## "))
+			continue
+		}
 		if len(line) < 4 {
 			continue
 		}
@@ -553,7 +577,24 @@ func statusItems() ([]item, error) {
 		return areaOrder(items[i].area) < areaOrder(items[j].area)
 	})
 
-	return items, nil
+	return branch, upstream, items, nil
+}
+
+func parseBranchLine(line string) (string, string) {
+	if strings.HasPrefix(line, "No commits yet on ") {
+		return strings.TrimPrefix(line, "No commits yet on "), ""
+	}
+
+	branch := line
+	upstream := ""
+	if before, after, ok := strings.Cut(line, "..."); ok {
+		branch = before
+		upstream = after
+		if i := strings.Index(upstream, " ["); i >= 0 {
+			upstream = ""
+		}
+	}
+	return branch, upstream
 }
 
 func areaOrder(which area) int {
@@ -581,17 +622,25 @@ func colorize(it item, text string) string {
 	color := ""
 	switch it.area {
 	case staged:
-		color = gitColor("status.added", "green")
+		color = gitColors.added
 	case unstaged:
-		color = gitColor("status.changed", "red")
+		color = gitColors.changed
 	case untracked:
-		color = gitColor("status.untracked", "red")
+		color = gitColors.untracked
 	}
 
 	if color == "" {
 		return text
 	}
 	return color + text + "\033[m"
+}
+
+func loadGitColors() colors {
+	return colors{
+		added:     gitColor("status.added", "green"),
+		changed:   gitColor("status.changed", "red"),
+		untracked: gitColor("status.untracked", "red"),
+	}
 }
 
 func gitColor(slot, fallback string) string {
@@ -619,25 +668,6 @@ func statusName(s string) string {
 	default:
 		return s
 	}
-}
-
-func gitOutput(args ...string) string {
-	out, _ := exec.Command("git", args...).Output()
-	return strings.TrimSpace(string(out))
-}
-
-func upstreamStatus() string {
-	upstream := gitOutput("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-	if upstream == "" {
-		return ""
-	}
-
-	counts := strings.Fields(gitOutput("rev-list", "--left-right", "--count", "HEAD...@{u}"))
-	if len(counts) == 2 && counts[0] == "0" && counts[1] == "0" {
-		return fmt.Sprintf("Your branch is up to date with '%s'.", upstream)
-	}
-
-	return ""
 }
 
 func stty(tty *os.File, args ...string) ([]byte, error) {
