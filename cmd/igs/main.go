@@ -46,6 +46,7 @@ type app struct {
 	initial   bool
 	detached  bool
 	upstream  string
+	gone      bool
 	ahead     int
 	behind    int
 	stash     int
@@ -267,7 +268,7 @@ func (a *app) render() string {
 		write(line + "\n")
 	}
 	if a.upstream != "" {
-		for _, line := range branchStatusLines(a.upstream, a.ahead, a.behind) {
+		for _, line := range branchStatusLines(a.upstream, a.ahead, a.behind, a.gone) {
 			write(line + "\n")
 		}
 	}
@@ -403,7 +404,7 @@ func (a *app) renderItems(b *strings.Builder, line *int, which area) {
 }
 
 func (a *app) refresh() {
-	branch, oid, initial, detached, upstream, ahead, behind, stash, operation, items, err := statusState(a.options)
+	branch, oid, initial, detached, upstream, gone, ahead, behind, stash, operation, items, err := statusState(a.options)
 	if err != nil {
 		a.err = err.Error()
 		return
@@ -414,6 +415,7 @@ func (a *app) refresh() {
 	a.initial = initial
 	a.detached = detached
 	a.upstream = upstream
+	a.gone = gone
 	a.ahead = ahead
 	a.behind = behind
 	a.stash = stash
@@ -679,7 +681,7 @@ func (a *app) itemsIn(which area) []item {
 	return out
 }
 
-func statusState(opts options) (string, string, bool, bool, string, int, int, int, operation, []item, error) {
+func statusState(opts options) (string, string, bool, bool, string, bool, int, int, int, operation, []item, error) {
 	args := []string{"status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal"}
 	if opts.ignored {
 		args = append(args, "--ignored=matching")
@@ -694,7 +696,7 @@ func statusState(opts options) (string, string, bool, bool, string, int, int, in
 		if message == "" {
 			message = err.Error()
 		}
-		return "", "", false, false, "", 0, 0, 0, operationNone, nil, fmt.Errorf("%s", message)
+		return "", "", false, false, "", false, 0, 0, 0, operationNone, nil, fmt.Errorf("%s", message)
 	}
 
 	var branch string
@@ -702,6 +704,7 @@ func statusState(opts options) (string, string, bool, bool, string, int, int, in
 	var initial bool
 	var detached bool
 	var upstream string
+	var gone bool
 	var ahead int
 	var behind int
 	var stash int
@@ -740,7 +743,18 @@ func statusState(opts options) (string, string, bool, bool, string, int, int, in
 		return areaOrder(items[i].area) < areaOrder(items[j].area)
 	})
 
-	return branch, oid, initial, detached, upstream, ahead, behind, stash, currentOperation(), items, nil
+	if upstream != "" {
+		gone = upstreamGone(upstream)
+	}
+
+	return branch, oid, initial, detached, upstream, gone, ahead, behind, stash, currentOperation(), items, nil
+}
+
+func upstreamGone(upstream string) bool {
+	if upstream == "" {
+		return false
+	}
+	return strings.TrimSpace(gitOutput("rev-parse", "--verify", "--quiet", upstream)) == ""
 }
 
 func currentOperation() operation {
@@ -921,7 +935,14 @@ func colorize(it item, text string) string {
 	return color + text + "\033[m"
 }
 
-func branchStatusLines(upstream string, ahead, behind int) []string {
+func branchStatusLines(upstream string, ahead, behind int, gone bool) []string {
+	if gone {
+		return []string{
+			fmt.Sprintf("Your branch is based on '%s', but the upstream is gone.", upstream),
+			"  (use \"git branch --unset-upstream\" to fixup)",
+		}
+	}
+
 	switch {
 	case ahead == 0 && behind == 0:
 		return []string{fmt.Sprintf("Your branch is up to date with '%s'.", upstream)}
