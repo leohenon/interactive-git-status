@@ -25,6 +25,7 @@ const (
 
 type options struct {
 	ignored bool
+	short   bool
 }
 
 type item struct {
@@ -200,8 +201,10 @@ func parseOptions(args []string) options {
 		switch arg {
 		case "--ignored":
 			opts.ignored = true
+		case "-s", "--short":
+			opts.short = true
 		case "-h", "--help":
-			fmt.Println("usage: igs [--ignored]")
+			fmt.Println("usage: igs [--ignored] [--short]")
 			os.Exit(0)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown option: %s\n", arg)
@@ -251,6 +254,10 @@ func (a *app) rewriteItemAs(index int, selected bool) {
 }
 
 func (a *app) itemLine(index int, selected bool) string {
+	if a.options.short {
+		return a.shortItemLine(index, selected)
+	}
+
 	marker := " "
 	if selected {
 		marker = "›"
@@ -265,7 +272,21 @@ func (a *app) itemLine(index int, selected bool) string {
 	return fmt.Sprintf("%s   %s   %s", marker, colorStatus(it), colorPath(it))
 }
 
+func (a *app) shortItemLine(index int, selected bool) string {
+	marker := " "
+	if selected {
+		marker = "›"
+	}
+
+	it := a.items[index]
+	return fmt.Sprintf("%s %s %s", marker, colorize(it, shortStatus(it)), colorPath(it))
+}
+
 func (a *app) render() string {
+	if a.options.short && len(a.items) > 0 {
+		return a.renderShort()
+	}
+
 	var b strings.Builder
 	line := 0
 	a.itemRows = make([]int, len(a.items))
@@ -348,6 +369,40 @@ func (a *app) render() string {
 		write("\n")
 		write(fmt.Sprintf("%s\n", a.err))
 	}
+
+	return b.String()
+}
+
+func (a *app) renderShort() string {
+	var b strings.Builder
+	line := 0
+	a.itemRows = make([]int, len(a.items))
+
+	renderSection := func(title string, sections ...area) {
+		hasItems := false
+		for _, section := range sections {
+			if len(a.itemsIn(section)) > 0 {
+				hasItems = true
+				break
+			}
+		}
+		if !hasItems {
+			return
+		}
+		if line > 0 {
+			b.WriteString("\033[K\r\n")
+			line++
+		}
+		fmt.Fprintf(&b, "%s\033[K\r\n", title)
+		line++
+		for _, section := range sections {
+			a.renderItems(&b, &line, section)
+		}
+	}
+
+	renderSection("Unstaged", unmerged, untracked, unstaged)
+	renderSection("Staged", staged)
+	renderSection("Ignored", ignored)
 
 	return b.String()
 }
@@ -966,6 +1021,24 @@ func areaOrder(which area) int {
 		return 4
 	default:
 		return 3
+	}
+}
+
+func shortStatus(it item) string {
+	switch it.area {
+	case untracked:
+		return "??"
+	case ignored:
+		return "!!"
+	case unmerged:
+		if len(it.status) == 2 {
+			return it.status
+		}
+		return "UU"
+	case staged, unstaged:
+		return it.status
+	default:
+		return it.status
 	}
 }
 
