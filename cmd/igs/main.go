@@ -706,7 +706,7 @@ func (a *app) itemsIn(which area) []item {
 }
 
 func statusState(opts options) (string, string, bool, bool, string, bool, int, int, int, string, operation, []item, error) {
-	args := []string{"status", "--porcelain=v2", "--branch", "--show-stash", "--untracked-files=normal"}
+	args := []string{"status", "--porcelain=v2", "-z", "--branch", "--show-stash", "--untracked-files=normal"}
 	if opts.ignored {
 		args = append(args, "--ignored=matching")
 	}
@@ -733,7 +733,9 @@ func statusState(opts options) (string, string, bool, bool, string, bool, int, i
 	var behind int
 	var stash int
 	var items []item
-	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+	records := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
+	for i := 0; i < len(records); i++ {
+		line := records[i]
 		if line == "" {
 			continue
 		}
@@ -744,22 +746,26 @@ func statusState(opts options) (string, string, bool, bool, string, bool, int, i
 
 		switch line[0] {
 		case '!':
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				items = append(items, item{area: ignored, status: "!!", path: fields[1]})
+			if path, ok := parseSimplePath(line); ok {
+				items = append(items, item{area: ignored, status: "!!", path: path})
 			}
 		case '?':
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				items = append(items, item{area: untracked, status: "??", path: fields[1]})
+			if path, ok := parseSimplePath(line); ok {
+				items = append(items, item{area: untracked, status: "??", path: path})
 			}
 		case 'u':
 			if parsed, ok := parseUnmergedLine(line); ok {
 				items = append(items, parsed)
 			}
-		case '1', '2':
-			parsed := parseChangedLine(line)
-			items = append(items, parsed...)
+		case '1':
+			items = append(items, parseChangedLine(line, "")...)
+		case '2':
+			origPath := ""
+			if i+1 < len(records) {
+				origPath = records[i+1]
+				i++
+			}
+			items = append(items, parseChangedLine(line, origPath)...)
 		}
 	}
 
@@ -878,28 +884,39 @@ func parseSignedCount(value string) int {
 	return n
 }
 
+func parseSimplePath(line string) (string, bool) {
+	if len(line) < 3 {
+		return "", false
+	}
+	return line[2:], true
+}
+
 func parseUnmergedLine(line string) (item, bool) {
 	fields := strings.Fields(line)
 	if len(fields) < 11 {
 		return item{}, false
 	}
-	return item{area: unmerged, status: fields[1], path: fields[len(fields)-1]}, true
+	path := strings.Join(fields[10:], " ")
+	return item{area: unmerged, status: fields[1], path: path}, true
 }
 
-func parseChangedLine(line string) []item {
+func parseChangedLine(line, origPath string) []item {
 	fields := strings.Fields(line)
-	if len(fields) < 9 {
+	minFields := 9
+	if line[0] == '2' {
+		minFields = 10
+	}
+	if len(fields) < minFields {
 		return nil
 	}
 
 	xy := fields[1]
 	submodule := fields[2]
-	path := fields[len(fields)-1]
-	origPath := ""
-	if line[0] == '2' && len(fields) >= 10 {
-		path = fields[len(fields)-2]
-		origPath = fields[len(fields)-1]
+	pathIndex := 8
+	if line[0] == '2' {
+		pathIndex = 9
 	}
+	path := strings.Join(fields[pathIndex:], " ")
 	detail := submoduleDetail(submodule)
 
 	var items []item
