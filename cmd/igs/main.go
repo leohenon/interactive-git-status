@@ -24,8 +24,9 @@ const (
 )
 
 type options struct {
-	ignored bool
-	short   bool
+	ignored   bool
+	short     bool
+	showStash bool
 }
 
 type item struct {
@@ -203,8 +204,10 @@ func parseOptions(args []string) options {
 			opts.ignored = true
 		case "-s", "--short":
 			opts.short = true
+		case "--show-stash":
+			opts.showStash = true
 		case "-h", "--help":
-			fmt.Println("usage: igs [--ignored] [--short]")
+			fmt.Println("usage: igs [--ignored] [--short] [--show-stash]")
 			os.Exit(0)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown option: %s\n", arg)
@@ -761,7 +764,10 @@ func (a *app) itemsIn(which area) []item {
 }
 
 func statusState(opts options) (string, string, bool, bool, string, bool, int, int, int, string, operation, []item, error) {
-	args := []string{"status", "--porcelain=v2", "-z", "--branch", "--show-stash", "--untracked-files=normal"}
+	args := []string{"status", "--porcelain=v2", "-z", "--branch", "--untracked-files=normal"}
+	if opts.showStash || gitConfigBool("status.showStash") {
+		args = append(args, "--show-stash")
+	}
 	if opts.ignored {
 		args = append(args, "--ignored=matching")
 	}
@@ -862,6 +868,11 @@ func sparseStatusLine() string {
 
 	percent := (present*100 + total/2) / total
 	return fmt.Sprintf("You are in a sparse checkout with %d%% of tracked files present.", percent)
+}
+
+func gitConfigBool(name string) bool {
+	value := strings.TrimSpace(gitOutput("config", "--bool", name))
+	return value == "true"
 }
 
 func upstreamGone(upstream string) bool {
