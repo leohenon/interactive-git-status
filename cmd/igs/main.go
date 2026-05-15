@@ -106,8 +106,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	terminalRestored := false
 	fmt.Print("\033[?25l")
 	defer func() {
+		if terminalRestored {
+			return
+		}
 		if len(a.items) > 0 {
 			a.clearCursorMarker()
 		}
@@ -147,6 +151,13 @@ func main() {
 			a.toggleAll()
 			drainInput(tty, r)
 			redraw = true
+		case 'c':
+			a.clearCursorMarker()
+			_ = restoreInputMode(tty, oldState)
+			terminalRestored = true
+			fmt.Print("\033[?25h\033[0m\n")
+			a.commit(tty)
+			return
 		case 's':
 			a.stage()
 			drainInput(tty, r)
@@ -510,6 +521,14 @@ func (a *app) unstage() {
 	} else {
 		a.runKeepingSection(staged, "rm", "--cached", "-r", "--", a.items[a.cursor].path)
 	}
+}
+
+func (a *app) commit(tty *os.File) {
+	cmd := exec.Command("git", "commit")
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	_ = cmd.Run()
 }
 
 func (a *app) toggleAll() {
