@@ -3,6 +3,7 @@
 <p align="center">
   <a href="https://github.com/leohenon/interactive-git-status/releases"><img src="https://img.shields.io/github/v/release/leohenon/interactive-git-status?style=flat-square&logo=github&logoColor=white&color=85c1e9" alt="Release"></a>
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.23%2B-85c1e9?style=flat-square&logo=go&logoColor=white" alt="Go 1.23+"></a>
+  <a href="https://github.com/leohenon/interactive-git-status/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/leohenon/interactive-git-status/ci.yml?style=flat-square&logo=github&logoColor=white&label=CI&color=3fb950" alt="CI"></a>
 </p>
 
 <p align="center">
@@ -45,6 +46,7 @@ igs --short
 | `--ignored`     | Show ignored files                                        |
 | `--show-stash`  | Show stash count. Also shown when `status.showStash=true` |
 | `--watch`       | Refresh status automatically                              |
+| `--version`     | Show version                                              |
 | `-h`, `--help`  | Show usage                                                |
 
 ## Keybindings
