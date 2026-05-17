@@ -46,6 +46,12 @@ Press `d` to open the selected file's diff using your configured Git pager.
 
 ![igs diff view](assets/igs-diff.gif)
 
+Customize via Git config:
+
+```sh
+git config --global igs.diffPager 'delta --paging=never --width {width} | less -R'
+```
+
 ## Flags
 
 | Flag            | Description                                               |
