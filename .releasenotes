@@ -1,0 +1,7 @@
+## Release Notes
+
+- Add diff view with the `d` keybinding.
+- Add configurable diff paging via Git config:
+  - `igs.diffPager`
+  - supports `{width}` expansion for terminal-aware pagers such as delta
+- Make ignored files display-only/non-selectable.
