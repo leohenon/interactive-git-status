@@ -230,8 +230,16 @@ func (a *app) draw() {
 }
 
 func (a *app) moveCursor(oldCursor int) {
+	if !a.itemVisible(oldCursor) || !a.itemVisible(a.cursor) {
+		a.draw()
+		return
+	}
 	a.rewriteItem(oldCursor)
 	a.rewriteItem(a.cursor)
+}
+
+func (a *app) itemVisible(index int) bool {
+	return index >= 0 && index < len(a.itemRows) && a.itemRows[index] > 0
 }
 
 func (a *app) clearCursorMarker() {
@@ -373,6 +381,53 @@ func (a *app) render() string {
 		write(fmt.Sprintf("%s\n", a.err))
 	}
 
+	return a.fitToTerminal(b.String(), line)
+}
+
+func (a *app) fitToTerminal(out string, totalLines int) string {
+	_, height, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || height <= 0 || totalLines <= height {
+		return out
+	}
+
+	cursorRow := 1
+	if a.cursor >= 0 && a.cursor < len(a.itemRows) && a.itemRows[a.cursor] > 0 {
+		cursorRow = a.itemRows[a.cursor]
+	}
+
+	start := cursorRow - height/2
+	if start < 1 {
+		start = 1
+	}
+	if start+height-1 > totalLines {
+		start = totalLines - height + 1
+	}
+	end := start + height - 1
+
+	for i, row := range a.itemRows {
+		if row >= start && row <= end {
+			a.itemRows[i] = row - start + 1
+		} else {
+			a.itemRows[i] = 0
+		}
+	}
+
+	parts := strings.Split(out, "\r\n")
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if start-1 >= len(parts) {
+		return out
+	}
+	if end > len(parts) {
+		end = len(parts)
+	}
+
+	var b strings.Builder
+	for _, part := range parts[start-1 : end] {
+		b.WriteString(part)
+		b.WriteString("\r\n")
+	}
 	return b.String()
 }
 
@@ -407,7 +462,7 @@ func (a *app) renderShort() string {
 	renderSection("Staged", staged)
 	renderSection("Ignored", ignored)
 
-	return b.String()
+	return a.fitToTerminal(b.String(), line)
 }
 
 func (a *app) operationLines() []string {
