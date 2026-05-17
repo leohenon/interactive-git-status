@@ -26,11 +26,22 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Prepare release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          printf '## Changelog\n\n' > .release-notes-current.md
+          awk -v version="$version" '
+            $0 ~ "^### +v?" version "$" { in_section = 1; next }
+            in_section && /^### / { exit }
+            in_section { print }
+          ' .releasenotes >> .release-notes-current.md
+          grep -q '^- ' .release-notes-current.md
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean --release-notes=.releasenotes
+          args: release --clean --release-notes=.release-notes-current.md
         env:
           GITHUB_TOKEN: ${{ secrets.GORELEASER_TOKEN }}

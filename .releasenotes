@@ -1,5 +1,6 @@
-## Release Notes
+## Changelog
 
+### 0.1.2
 - Add diff view with the `d` keybinding.
 - Add configurable diff paging via Git config:
   - `igs.diffPager`
