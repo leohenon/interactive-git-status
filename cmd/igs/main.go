@@ -38,23 +38,24 @@ type item struct {
 }
 
 type app struct {
-	items     []item
-	cursor    int
-	err       string
-	lastLines int
-	itemRows  []int
-	branch    string
-	oid       string
-	initial   bool
-	detached  bool
-	upstream  string
-	gone      bool
-	ahead     int
-	behind    int
-	stash     int
-	sparse    string
-	operation operation
-	options   options
+	items          []item
+	cursor         int
+	err            string
+	lastLines      int
+	itemRows       []int
+	truncatedBelow bool
+	branch         string
+	oid            string
+	initial        bool
+	detached       bool
+	upstream       string
+	gone           bool
+	ahead          int
+	behind         int
+	stash          int
+	sparse         string
+	operation      operation
+	options        options
 }
 
 type operation string
@@ -116,6 +117,9 @@ func main() {
 		}
 		if len(a.items) > 0 {
 			a.clearCursorMarker()
+		}
+		if a.truncatedBelow {
+			fmt.Print("\033[90m...\033[0m\033[K")
 		}
 		_ = restoreInputMode(tty, oldState)
 		fmt.Print("\033[?25h\033[0m\n")
@@ -393,6 +397,7 @@ func (a *app) render() string {
 }
 
 func (a *app) fitToTerminal(out string, totalLines int) string {
+	a.truncatedBelow = false
 	_, height, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil || height <= 0 || totalLines <= height {
 		return out
@@ -417,6 +422,7 @@ func (a *app) fitToTerminal(out string, totalLines int) string {
 		start = totalLines - height + 1
 	}
 	end := start + height - 1
+	a.truncatedBelow = end < totalLines
 
 	for i, row := range a.itemRows {
 		if row >= start && row <= end {
