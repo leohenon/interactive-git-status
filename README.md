@@ -79,6 +79,13 @@ Keep the familiar `git status` view, but stage, unstage, and commit interactivel
 
 > Supports macOS and Linux.
 
+## Example aliases
+
+```sh
+alias gs='igs'
+alias gss='igs --short'
+```
+
 ## License
 
 MIT
