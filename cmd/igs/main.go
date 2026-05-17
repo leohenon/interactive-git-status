@@ -831,12 +831,29 @@ func (a *app) diff(tty *os.File) {
 		args = []string{"diff", "HEAD", "--", it.path}
 	}
 
+	if pager := igsDiffPager(); pager != "" {
+		args = append([]string{"-c", "core.pager=" + pager}, args...)
+	}
+
 	cmd := a.gitCommand(args...)
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 	cmd.Env = append(os.Environ(), "LESS=R")
 	_ = cmd.Run()
+}
+
+func igsDiffPager() string {
+	pager := strings.TrimSpace(gitOutput("config", "--get", "igs.diffPager"))
+	if pager == "" {
+		return ""
+	}
+
+	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || width <= 0 {
+		width = 120
+	}
+	return strings.ReplaceAll(pager, "{width}", fmt.Sprintf("%d", width))
 }
 
 func (a *app) gitCommand(args ...string) *exec.Cmd {

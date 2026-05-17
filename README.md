@@ -38,6 +38,14 @@ igs --short
 
 ![igs short view](assets/igs-short.gif)
 
+Press `c` to commit staged changes.
+
+![igs commit view](assets/igs-commit.gif)
+
+Press `d` to open the selected file's diff using your configured Git pager.
+
+![igs diff view](assets/igs-diff.gif)
+
 ## Flags
 
 | Flag            | Description                                               |
