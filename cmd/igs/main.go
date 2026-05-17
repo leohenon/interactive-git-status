@@ -98,6 +98,7 @@ func main() {
 	}
 	if len(a.actionableItems()) == 0 {
 		fmt.Print(a.render())
+		fmt.Print("\n")
 		return
 	}
 
@@ -318,6 +319,7 @@ func (a *app) actionableItems() []item {
 }
 
 func (a *app) itemLine(index int, selected bool) string {
+	selected = selected && a.selectable(index)
 	if a.options.short {
 		return a.shortItemLine(index, selected)
 	}
@@ -330,6 +332,9 @@ func (a *app) itemLine(index int, selected bool) string {
 	it := a.items[index]
 	status := statusName(it.status)
 	if status == "" {
+		if it.area == ignored {
+			return "  " + colorPath(it)
+		}
 		return marker + "   " + colorPath(it)
 	}
 
@@ -337,6 +342,7 @@ func (a *app) itemLine(index int, selected bool) string {
 }
 
 func (a *app) shortItemLine(index int, selected bool) string {
+	selected = selected && a.selectable(index)
 	marker := " "
 	if selected {
 		marker = "›"
