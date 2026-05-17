@@ -99,7 +99,9 @@ func main() {
 	}
 	if len(a.actionableItems()) == 0 {
 		fmt.Print(a.render())
-		fmt.Print("\n")
+		if len(a.items) > 0 {
+			fmt.Print("\r\n")
+		}
 		return
 	}
 
