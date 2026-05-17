@@ -78,6 +78,8 @@ type colors struct {
 	ignored   string
 }
 
+var version = "dev"
+
 var gitColors = colors{
 	added:     "\033[32m",
 	changed:   "\033[31m",
@@ -240,8 +242,11 @@ func parseOptions(args []string) options {
 			opts.showStash = true
 		case "--watch":
 			opts.watch = true
+		case "--version":
+			fmt.Printf("igs %s\n", version)
+			os.Exit(0)
 		case "-h", "--help":
-			fmt.Println("usage: igs [--ignored] [--short] [--show-stash] [--watch]")
+			fmt.Println("usage: igs [--ignored] [--short] [--show-stash] [--watch] [--version]")
 			os.Exit(0)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown option: %s\n", arg)
