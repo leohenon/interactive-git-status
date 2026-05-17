@@ -1,8 +1,12 @@
 ## Changelog
 
-### 0.1.2
+### 0.1.2 (current)
 - Add diff view with the `d` keybinding.
 - Add configurable diff paging via Git config:
   - `igs.diffPager`
   - supports `{width}` expansion for terminal-aware pagers such as delta
 - Make ignored files display-only/non-selectable.
+
+### 0.1.3
+- Fix trailing newline behavior for clean and ignored-only output.
+
