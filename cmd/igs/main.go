@@ -144,6 +144,10 @@ func main() {
 			a.down()
 		case 'k':
 			a.up()
+		case 'g':
+			a.top()
+		case 'G':
+			a.bottom()
 		case 4:
 			a.pageDown()
 		case 21:
@@ -572,6 +576,16 @@ func (a *app) up() {
 func (a *app) down() {
 	if a.cursor < len(a.items)-1 {
 		a.cursor++
+	}
+}
+
+func (a *app) top() {
+	a.cursor = 0
+}
+
+func (a *app) bottom() {
+	if len(a.items) > 0 {
+		a.cursor = len(a.items) - 1
 	}
 }
 
