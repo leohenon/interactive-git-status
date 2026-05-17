@@ -403,25 +403,38 @@ func (a *app) fitToTerminal(out string, totalLines int) string {
 		return out
 	}
 
+	parts := strings.Split(out, "\r\n")
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+
+	visibleHeight := height - 1
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
 	cursorRow := 1
 	if a.cursor >= 0 && a.cursor < len(a.itemRows) && a.itemRows[a.cursor] > 0 {
 		cursorRow = a.itemRows[a.cursor]
 	}
 
-	start := cursorRow - height/2
+	start := cursorRow - visibleHeight/2
 	if start < 1 {
 		start = 1
 	}
 	if cursorRow < start {
 		start = cursorRow
 	}
-	if cursorRow > start+height-1 {
-		start = cursorRow - height + 1
+	if cursorRow > start+visibleHeight-1 {
+		start = cursorRow - visibleHeight + 1
 	}
-	if start+height-1 > totalLines {
-		start = totalLines - height + 1
+	if start+visibleHeight-1 > totalLines {
+		start = totalLines - visibleHeight + 1
 	}
-	end := start + height - 1
+	end := start + visibleHeight - 1
+	if end > len(parts) {
+		end = len(parts)
+	}
 	a.truncatedBelow = end < totalLines
 
 	for i, row := range a.itemRows {
@@ -430,17 +443,6 @@ func (a *app) fitToTerminal(out string, totalLines int) string {
 		} else {
 			a.itemRows[i] = 0
 		}
-	}
-
-	parts := strings.Split(out, "\r\n")
-	if len(parts) > 0 && parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	if start-1 >= len(parts) {
-		return out
-	}
-	if end > len(parts) {
-		end = len(parts)
 	}
 
 	var b strings.Builder
