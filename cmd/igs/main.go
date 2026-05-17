@@ -96,7 +96,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, a.err)
 		os.Exit(1)
 	}
-	if len(a.items) == 0 {
+	if len(a.actionableItems()) == 0 {
 		fmt.Print(a.render())
 		return
 	}
@@ -301,6 +301,20 @@ func (a *app) rewriteItemAs(index int, selected bool) {
 
 	up := a.lastLines - row + 1
 	fmt.Printf("\r\033[%dA\033[K%s\033[%dB\r", up, a.itemLine(index, selected), up)
+}
+
+func (a *app) selectable(index int) bool {
+	return index >= 0 && index < len(a.items) && a.items[index].area != ignored
+}
+
+func (a *app) actionableItems() []item {
+	var out []item
+	for _, it := range a.items {
+		if it.area != ignored {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 func (a *app) itemLine(index int, selected bool) string {
@@ -600,34 +614,86 @@ func (a *app) refresh() {
 	a.operation = operation
 	a.items = items
 	a.err = ""
+	a.ensureSelectableCursor(1)
+}
+
+func (a *app) ensureSelectableCursor(direction int) {
+	if len(a.items) == 0 {
+		a.cursor = 0
+		return
+	}
 	if a.cursor >= len(a.items) {
 		a.cursor = len(a.items) - 1
 	}
 	if a.cursor < 0 {
 		a.cursor = 0
 	}
+	if a.selectable(a.cursor) {
+		return
+	}
+
+	if direction < 0 {
+		for i := a.cursor; i >= 0; i-- {
+			if a.selectable(i) {
+				a.cursor = i
+				return
+			}
+		}
+	}
+	for i := a.cursor; i < len(a.items); i++ {
+		if a.selectable(i) {
+			a.cursor = i
+			return
+		}
+	}
+	for i := a.cursor; i >= 0; i-- {
+		if a.selectable(i) {
+			a.cursor = i
+			return
+		}
+	}
 }
 
 func (a *app) up() {
-	if a.cursor > 0 {
-		a.cursor--
+	for i := a.cursor - 1; i >= 0; i-- {
+		if a.selectable(i) {
+			a.cursor = i
+			return
+		}
 	}
 }
 
 func (a *app) down() {
-	if a.cursor < len(a.items)-1 {
-		a.cursor++
+	for i := a.cursor + 1; i < len(a.items); i++ {
+		if a.selectable(i) {
+			a.cursor = i
+			return
+		}
 	}
 }
 
 func (a *app) top() {
-	a.cursor = 0
+	if index := a.firstSelectable(); index >= 0 {
+		a.cursor = index
+	}
 }
 
 func (a *app) bottom() {
-	if len(a.items) > 0 {
-		a.cursor = len(a.items) - 1
+	for i := len(a.items) - 1; i >= 0; i-- {
+		if a.selectable(i) {
+			a.cursor = i
+			return
+		}
 	}
+}
+
+func (a *app) firstSelectable() int {
+	for i := range a.items {
+		if a.selectable(i) {
+			return i
+		}
+	}
+	return -1
 }
 
 func (a *app) pageDown() {
