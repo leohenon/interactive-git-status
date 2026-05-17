@@ -407,6 +407,12 @@ func (a *app) fitToTerminal(out string, totalLines int) string {
 	if start < 1 {
 		start = 1
 	}
+	if cursorRow < start {
+		start = cursorRow
+	}
+	if cursorRow > start+height-1 {
+		start = cursorRow - height + 1
+	}
 	if start+height-1 > totalLines {
 		start = totalLines - height + 1
 	}
