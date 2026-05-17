@@ -53,13 +53,6 @@ igs --short
 
 | Key                  | Action                               |
 | -------------------- | ------------------------------------ |
-| `j`, `↓`             | Move down                            |
-| `k`, `↑`             | Move up                              |
-| `ctrl-d`             | Move down half a screen              |
-| `ctrl-u`             | Move up half a screen                |
-| `g`                  | Jump to top                          |
-| `G`                  | Jump to bottom                       |
-| `tab`                | Jump to next section                 |
 | `enter`              | Toggle selected file staged/unstaged |
 | `s`                  | Stage selected file                  |
 | `u`                  | Unstage selected file                |
@@ -68,6 +61,13 @@ igs --short
 | `U`                  | Unstage all                          |
 | `c`                  | Commit staged changes                |
 | `r`                  | Refresh                              |
+| `j`, `↓`             | Move down                            |
+| `k`, `↑`             | Move up                              |
+| `ctrl-d`             | Move down half a screen              |
+| `ctrl-u`             | Move up half a screen                |
+| `g`                  | Jump to top                          |
+| `G`                  | Jump to bottom                       |
+| `tab`                | Jump to next section                 |
 | `q`, `esc`, `ctrl-c` | Exit                                 |
 
 ## Why
