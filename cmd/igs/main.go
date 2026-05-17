@@ -688,7 +688,7 @@ func (a *app) unstage() {
 	if hasHead() {
 		a.runKeepingSection(staged, "restore", "--staged", "--", a.items[a.cursor].path)
 	} else {
-		a.runKeepingSection(staged, "rm", "--cached", "-r", "--", a.items[a.cursor].path)
+		a.runKeepingSection(staged, "rm", "--cached", "-r", "-f", "--", a.items[a.cursor].path)
 	}
 }
 
@@ -716,7 +716,7 @@ func (a *app) unstageAll() {
 	if hasHead() {
 		a.runKeepingSection(a.currentSection(), "restore", "--staged", ":/")
 	} else {
-		a.runKeepingSection(a.currentSection(), "rm", "--cached", "-r", ":/")
+		a.runKeepingSection(a.currentSection(), "rm", "--cached", "-r", "-f", ":/")
 	}
 }
 
