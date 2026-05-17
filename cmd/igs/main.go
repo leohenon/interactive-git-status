@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,6 +28,7 @@ type options struct {
 	ignored   bool
 	short     bool
 	showStash bool
+	watch     bool
 }
 
 type item struct {
@@ -128,9 +130,23 @@ func main() {
 	a.draw()
 
 	r := bufio.NewReader(tty)
+	watchRefresh := time.Now().Add(2 * time.Second)
+	if opts.watch {
+		_ = syscall.SetNonblock(int(tty.Fd()), true)
+		defer syscall.SetNonblock(int(tty.Fd()), false)
+	}
 	for {
 		b, err := r.ReadByte()
 		if err != nil {
+			if opts.watch && errors.Is(err, syscall.EAGAIN) {
+				if time.Now().After(watchRefresh) {
+					a.refresh()
+					a.draw()
+					watchRefresh = time.Now().Add(2 * time.Second)
+				}
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
 			return
 		}
 
@@ -190,7 +206,7 @@ func main() {
 			redraw = true
 		case '\033':
 			// Arrow keys: ESC [ A/B. Plain ESC exits.
-			switch readEscapeSequence(tty, r) {
+			switch readEscapeSequence(tty, r, opts.watch) {
 			case "[A":
 				a.up()
 			case "[B":
@@ -198,6 +214,10 @@ func main() {
 			default:
 				return
 			}
+		}
+
+		if opts.watch {
+			_ = syscall.SetNonblock(int(tty.Fd()), true)
 		}
 
 		if redraw {
@@ -218,8 +238,10 @@ func parseOptions(args []string) options {
 			opts.short = true
 		case "--show-stash":
 			opts.showStash = true
+		case "--watch":
+			opts.watch = true
 		case "-h", "--help":
-			fmt.Println("usage: igs [--ignored] [--short] [--show-stash]")
+			fmt.Println("usage: igs [--ignored] [--short] [--show-stash] [--watch]")
 			os.Exit(0)
 		default:
 			fmt.Fprintf(os.Stderr, "unknown option: %s\n", arg)
@@ -847,7 +869,7 @@ func drainInput(tty *os.File, r *bufio.Reader) {
 	}
 }
 
-func readEscapeSequence(tty *os.File, r *bufio.Reader) string {
+func readEscapeSequence(tty *os.File, r *bufio.Reader, keepNonblock bool) string {
 	if r.Buffered() >= 2 {
 		next, _ := r.Peek(2)
 		_, _ = r.Discard(2)
@@ -856,7 +878,9 @@ func readEscapeSequence(tty *os.File, r *bufio.Reader) string {
 
 	fd := int(tty.Fd())
 	_ = syscall.SetNonblock(fd, true)
-	defer syscall.SetNonblock(fd, false)
+	if !keepNonblock {
+		defer syscall.SetNonblock(fd, false)
+	}
 
 	time.Sleep(10 * time.Millisecond)
 	buf := make([]byte, 2)

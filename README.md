@@ -44,6 +44,7 @@ igs --short
 | `-s`, `--short` | Use compact interactive status view                       |
 | `--ignored`     | Show ignored files                                        |
 | `--show-stash`  | Show stash count. Also shown when `status.showStash=true` |
+| `--watch`       | Refresh status automatically                              |
 | `-h`, `--help`  | Show usage                                                |
 
 ## Keybindings
