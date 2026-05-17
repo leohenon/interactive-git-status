@@ -38,10 +38,6 @@ igs --short
 
 ![igs short view](assets/igs-short.gif)
 
-Press `c` to commit staged changes.
-
-![igs commit view](assets/igs-commit.gif)
-
 Press `d` to open the selected file's diff using your configured Git pager.
 
 ![igs diff view](assets/igs-diff.gif)
@@ -49,6 +45,7 @@ Press `d` to open the selected file's diff using your configured Git pager.
 Customize via Git config:
 
 ```sh
+# Example
 git config --global igs.diffPager 'delta --paging=never --width {width} | less -R'
 ```
 
@@ -91,6 +88,7 @@ Keep the familiar `git status` view, but stage, unstage, and commit interactivel
 
 ## What it does
 
+- Stage, unstage, commit, and view diffs from `git status`
 - Supports staged, unstaged, untracked, ignored, and unmerged files
 - Shows branch, upstream, stash, sparse checkout, detached HEAD, and in-progress operation state
 - Handles renamed files, copied files, submodules, and paths with spaces
