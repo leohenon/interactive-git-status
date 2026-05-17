@@ -60,6 +60,7 @@ igs --short
 | `S`                  | Stage all                            |
 | `U`                  | Unstage all                          |
 | `c`                  | Commit staged changes                |
+| `d`                  | Show diff for selected file          |
 | `r`                  | Refresh                              |
 | `j`, `↓`             | Move down                            |
 | `k`, `↑`             | Move up                              |

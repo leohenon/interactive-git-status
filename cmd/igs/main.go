@@ -57,6 +57,7 @@ type app struct {
 	stash          int
 	sparse         string
 	operation      operation
+	worktreeRoot   string
 	options        options
 }
 
@@ -191,6 +192,20 @@ func main() {
 			fmt.Print("\033[?25h\033[0m\n")
 			a.commit(tty)
 			return
+		case 'd':
+			fmt.Print("\033[2K\r")
+			_ = restoreInputMode(tty, oldState)
+			_ = syscall.SetNonblock(int(tty.Fd()), false)
+			fmt.Print("\033[?25h\033[0m")
+			a.diff(tty)
+			oldState, err = enableInputMode(tty)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return
+			}
+			fmt.Print("\033[?25l")
+			a.refresh()
+			redraw = true
 		case 's':
 			a.stage()
 			drainInput(tty, r)
@@ -618,6 +633,7 @@ func (a *app) refresh() {
 	a.stash = stash
 	a.sparse = sparse
 	a.operation = operation
+	a.worktreeRoot = strings.TrimSpace(gitOutput("rev-parse", "--show-toplevel"))
 	a.items = items
 	a.err = ""
 	a.ensureSelectableCursor(1)
@@ -799,6 +815,38 @@ func (a *app) commit(tty *os.File) {
 	_ = cmd.Run()
 }
 
+func (a *app) diff(tty *os.File) {
+	if len(a.items) == 0 || !a.selectable(a.cursor) {
+		return
+	}
+
+	it := a.items[a.cursor]
+	var args []string
+	switch it.area {
+	case staged:
+		args = []string{"diff", "--cached", "--", it.path}
+	case untracked:
+		args = []string{"diff", "--no-index", "--", "/dev/null", it.path}
+	default:
+		args = []string{"diff", "HEAD", "--", it.path}
+	}
+
+	cmd := a.gitCommand(args...)
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	cmd.Env = append(os.Environ(), "LESS=R")
+	_ = cmd.Run()
+}
+
+func (a *app) gitCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	if a.worktreeRoot != "" {
+		cmd.Dir = a.worktreeRoot
+	}
+	return cmd
+}
+
 func (a *app) toggleAll() {
 	if a.currentSection() == staged {
 		a.unstageAll()
@@ -834,7 +882,7 @@ func (a *app) runKeepingSection(section area, args ...string) {
 		oldPath = a.items[oldIndex].path
 	}
 
-	cmd := exec.Command("git", args...)
+	cmd := a.gitCommand(args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		a.err = strings.TrimSpace(string(out))
