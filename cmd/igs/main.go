@@ -144,6 +144,10 @@ func main() {
 			a.down()
 		case 'k':
 			a.up()
+		case 4:
+			a.pageDown()
+		case 21:
+			a.pageUp()
 		case 'r':
 			a.refresh()
 			redraw = true
@@ -569,6 +573,30 @@ func (a *app) down() {
 	if a.cursor < len(a.items)-1 {
 		a.cursor++
 	}
+}
+
+func (a *app) pageDown() {
+	for i := 0; i < a.pageStep(); i++ {
+		a.down()
+	}
+}
+
+func (a *app) pageUp() {
+	for i := 0; i < a.pageStep(); i++ {
+		a.up()
+	}
+}
+
+func (a *app) pageStep() int {
+	_, height, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || height <= 0 {
+		return 10
+	}
+	step := height / 2
+	if step < 1 {
+		return 1
+	}
+	return step
 }
 
 func (a *app) nextSection() {

@@ -52,6 +52,8 @@ igs --short
 | -------------------- | ------------------------------------ |
 | `j`, `↓`             | Move down                            |
 | `k`, `↑`             | Move up                              |
+| `ctrl-d`             | Move down half a screen              |
+| `ctrl-u`             | Move up half a screen                |
 | `tab`                | Jump to next section                 |
 | `enter`              | Toggle selected file staged/unstaged |
 | `s`                  | Stage selected file                  |
