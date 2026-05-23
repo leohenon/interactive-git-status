@@ -208,6 +208,20 @@ func main() {
 			fmt.Print("\033[?25l")
 			a.refresh()
 			redraw = true
+		case 'o':
+			fmt.Print("\033[2K\r")
+			_ = restoreInputMode(tty, oldState)
+			_ = syscall.SetNonblock(int(tty.Fd()), false)
+			fmt.Print("\033[?25h\033[0m")
+			a.openInEditor(tty)
+			oldState, err = enableInputMode(tty)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return
+			}
+			fmt.Print("\033[?25l")
+			a.refresh()
+			redraw = true
 		case 's':
 			a.stage()
 			drainInput(tty, r)
@@ -842,6 +856,29 @@ func (a *app) diff(tty *os.File) {
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 	cmd.Env = append(os.Environ(), "LESS=R")
+	_ = cmd.Run()
+}
+
+func (a *app) openInEditor(tty *os.File) {
+	if len(a.items) == 0 || !a.selectable(a.cursor) {
+		return
+	}
+
+	editor := strings.TrimSpace(os.Getenv("EDITOR"))
+	if editor == "" {
+		editor = strings.TrimSpace(os.Getenv("VISUAL"))
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+
+	cmd := exec.Command("sh", "-c", editor+" \"$1\"", "igs-editor", a.items[a.cursor].path)
+	if a.worktreeRoot != "" {
+		cmd.Dir = a.worktreeRoot
+	}
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
 	_ = cmd.Run()
 }
 

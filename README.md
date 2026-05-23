@@ -39,6 +39,7 @@ igs --short
 ![igs short view](assets/igs-short.gif)
 
 Press `d` to open the selected file's diff using your configured Git pager.
+Press `o` to open the selected file in `$EDITOR`.
 
 ![igs diff view](assets/igs-diff.gif)
 
@@ -72,6 +73,7 @@ git config --global igs.diffPager 'delta --paging=never --width {width} | less -
 | `U`                  | Unstage all                          |
 | `c`                  | Commit staged changes                |
 | `d`                  | Show diff for selected file          |
+| `o`                  | Open selected file in `$EDITOR`      |
 | `r`                  | Refresh                              |
 | `j`, `↓`             | Move down                            |
 | `k`, `↑`             | Move up                              |
