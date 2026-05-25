@@ -1,12 +1,14 @@
 ## Changelog
 
-### 0.1.2 (current)
+### 0.2.0
+- Open selected file in `$EDITOR` with `o`.
+- Show full staged diff with `D`.
+- Fix trailing newline behavior for clean and ignored-only output.
+
+### 0.1.2
 - Add diff view with the `d` keybinding.
 - Add configurable diff paging via Git config:
   - `igs.diffPager`
   - supports `{width}` expansion for terminal-aware pagers such as delta
 - Make ignored files display-only/non-selectable.
-
-### 0.1.3
-- Fix trailing newline behavior for clean and ignored-only output.
 
