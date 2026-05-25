@@ -208,6 +208,20 @@ func main() {
 			fmt.Print("\033[?25l")
 			a.refresh()
 			redraw = true
+		case 'D':
+			fmt.Print("\033[2K\r")
+			_ = restoreInputMode(tty, oldState)
+			_ = syscall.SetNonblock(int(tty.Fd()), false)
+			fmt.Print("\033[?25h\033[0m")
+			a.stagedDiff(tty)
+			oldState, err = enableInputMode(tty)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return
+			}
+			fmt.Print("\033[?25l")
+			a.refresh()
+			redraw = true
 		case 'o':
 			fmt.Print("\033[2K\r")
 			_ = restoreInputMode(tty, oldState)
@@ -879,6 +893,20 @@ func (a *app) openInEditor(tty *os.File) {
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
+	_ = cmd.Run()
+}
+
+func (a *app) stagedDiff(tty *os.File) {
+	args := []string{"diff", "--cached"}
+	if pager := igsDiffPager(); pager != "" {
+		args = append([]string{"-c", "core.pager=" + pager}, args...)
+	}
+
+	cmd := a.gitCommand(args...)
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	cmd.Env = append(os.Environ(), "LESS=R")
 	_ = cmd.Run()
 }
 
