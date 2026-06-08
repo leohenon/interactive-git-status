@@ -249,6 +249,23 @@ func main() {
 			}
 			a.refresh()
 			redraw = true
+		case 'P':
+			fmt.Print("\033[2K\r")
+			_ = restoreInputMode(tty, oldState)
+			_ = syscall.SetNonblock(int(tty.Fd()), false)
+			fmt.Print("\033[?25h\033[0m")
+			patchRan := a.patchStageAll(tty)
+			oldState, err = enableInputMode(tty)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return
+			}
+			fmt.Print("\033[?25l")
+			if patchRan {
+				a.lastLines = 0
+			}
+			a.refresh()
+			redraw = true
 		case 'o':
 			fmt.Print("\033[2K\r")
 			_ = restoreInputMode(tty, oldState)
@@ -973,6 +990,28 @@ func (a *app) patchStage(tty *os.File) bool {
 		_ = a.gitCommand("reset", "-q", "--", it.path).Run()
 	}
 	return true
+}
+
+func (a *app) patchStageAll(tty *os.File) bool {
+	if !a.hasItemsIn(unstaged) {
+		return false
+	}
+
+	cmd := a.gitCommand("add", "-p")
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	_ = cmd.Run()
+	return true
+}
+
+func (a *app) hasItemsIn(which area) bool {
+	for _, it := range a.items {
+		if it.area == which {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *app) hasStagedChanges(path string) bool {
