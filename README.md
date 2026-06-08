@@ -6,8 +6,10 @@
 </p>
 
 <p align="center">
-  Minimal interactive <code>git status</code> for staging, unstaging, committing, diffing, and opening files.
+  <code>igs</code> is an interactive <code>git status</code> command.
 </p>
+
+It keeps the familiar status view, but lets you stage, unstage, diff, restore, hunk-stage, open files and commit with single-key shortcuts. It is not a full Git client; it is meant to make the raw Git workflow faster without replacing it.
 
 ## Install
 
@@ -53,6 +55,14 @@ igs
 - `--watch` auto-refresh
 - `--version` print version
 - `-h`, `--help` print help
+
+## Diff pager
+
+To configure a custom pager use:
+
+```sh
+git config --global igs.diffPager 'delta --paging=never --width {width} | less -R'
+```
 
 ## License
 
