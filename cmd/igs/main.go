@@ -237,13 +237,16 @@ func main() {
 			_ = restoreInputMode(tty, oldState)
 			_ = syscall.SetNonblock(int(tty.Fd()), false)
 			fmt.Print("\033[?25h\033[0m")
-			a.patchStage(tty)
+			patchRan := a.patchStage(tty)
 			oldState, err = enableInputMode(tty)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				return
 			}
 			fmt.Print("\033[?25l")
+			if patchRan {
+				a.lastLines = 0
+			}
 			a.refresh()
 			redraw = true
 		case 'o':
@@ -941,19 +944,41 @@ func (a *app) stagedDiff(tty *os.File) {
 	_ = cmd.Run()
 }
 
-func (a *app) patchStage(tty *os.File) {
+func (a *app) patchStage(tty *os.File) bool {
 	if len(a.items) == 0 || a.cursor < 0 || a.cursor >= len(a.items) {
-		return
-	}
-	if a.items[a.cursor].area != unstaged {
-		return
+		return false
 	}
 
-	cmd := a.gitCommand("add", "-p", "--", a.items[a.cursor].path)
+	it := a.items[a.cursor]
+	if it.area != unstaged && it.area != untracked {
+		return false
+	}
+
+	if it.area == untracked {
+		cmd := a.gitCommand("add", "-N", "--", it.path)
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		if err := cmd.Run(); err != nil {
+			return false
+		}
+	}
+
+	cmd := a.gitCommand("add", "-p", "--", it.path)
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 	_ = cmd.Run()
+
+	if it.area == untracked && !a.hasStagedChanges(it.path) {
+		_ = a.gitCommand("reset", "-q", "--", it.path).Run()
+	}
+	return true
+}
+
+func (a *app) hasStagedChanges(path string) bool {
+	err := a.gitCommand("diff", "--cached", "--quiet", "--", path).Run()
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
 }
 
 func igsDiffPager() string {
