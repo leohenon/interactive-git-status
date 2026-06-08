@@ -31,6 +31,7 @@ igs
 
 - `enter` toggle stage
 - `s` / `u` stage / unstage
+- `p` stage hunks in selected file
 - `S` / `U` stage / unstage all
 - `a` toggle current side
 - `c` commit

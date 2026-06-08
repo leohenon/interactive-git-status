@@ -232,6 +232,20 @@ func main() {
 			fmt.Print("\033[?25l")
 			a.refresh()
 			redraw = true
+		case 'p':
+			fmt.Print("\033[2K\r")
+			_ = restoreInputMode(tty, oldState)
+			_ = syscall.SetNonblock(int(tty.Fd()), false)
+			fmt.Print("\033[?25h\033[0m")
+			a.patchStage(tty)
+			oldState, err = enableInputMode(tty)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return
+			}
+			fmt.Print("\033[?25l")
+			a.refresh()
+			redraw = true
 		case 'o':
 			fmt.Print("\033[2K\r")
 			_ = restoreInputMode(tty, oldState)
@@ -924,6 +938,21 @@ func (a *app) stagedDiff(tty *os.File) {
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 	cmd.Env = append(os.Environ(), "LESS=R")
+	_ = cmd.Run()
+}
+
+func (a *app) patchStage(tty *os.File) {
+	if len(a.items) == 0 || a.cursor < 0 || a.cursor >= len(a.items) {
+		return
+	}
+	if a.items[a.cursor].area != unstaged {
+		return
+	}
+
+	cmd := a.gitCommand("add", "-p", "--", a.items[a.cursor].path)
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
 	_ = cmd.Run()
 }
 
