@@ -35,6 +35,7 @@ igs
 - `a` toggle current side
 - `c` commit
 - `d` / `D` diff selected / staged
+- `x` discard selected file
 - `o` open in `$EDITOR`
 - `r` refresh
 - `j`/`k`, `↓`/`↑` move

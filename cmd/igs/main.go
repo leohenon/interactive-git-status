@@ -181,6 +181,16 @@ func main() {
 		case 'r':
 			a.refresh()
 			redraw = true
+		case 'x':
+			if a.canDiscardSelected() {
+				if a.confirmDiscard(tty, r, opts.watch) {
+					a.discard()
+				}
+			} else {
+				a.discard()
+			}
+			drainInput(tty, r)
+			redraw = true
 		case '\t':
 			a.nextSection()
 		case 'a':
@@ -336,6 +346,13 @@ func (a *app) rewriteItem(index int) {
 }
 
 func (a *app) rewriteItemAs(index int, selected bool) {
+	if index < 0 || index >= len(a.items) {
+		return
+	}
+	a.rewriteItemText(index, a.itemLine(index, selected))
+}
+
+func (a *app) rewriteItemText(index int, text string) {
 	if index < 0 || index >= len(a.items) || index >= len(a.itemRows) {
 		return
 	}
@@ -346,7 +363,7 @@ func (a *app) rewriteItemAs(index int, selected bool) {
 	}
 
 	up := a.lastLines - row + 1
-	fmt.Printf("\r\033[%dA\033[K%s\033[%dB\r", up, a.itemLine(index, selected), up)
+	fmt.Printf("\r\033[%dA\033[K%s\033[%dB\r", up, text, up)
 }
 
 func (a *app) selectable(index int) bool {
@@ -948,6 +965,67 @@ func (a *app) unstageAll() {
 		a.runKeepingSection(a.currentSection(), "restore", "--staged", ":/")
 	} else {
 		a.runKeepingSection(a.currentSection(), "rm", "--cached", "-r", "-f", ":/")
+	}
+}
+
+func (a *app) canDiscardSelected() bool {
+	if len(a.items) == 0 || a.cursor < 0 || a.cursor >= len(a.items) {
+		return false
+	}
+
+	switch a.items[a.cursor].area {
+	case untracked, unstaged, staged:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *app) confirmDiscard(tty *os.File, r *bufio.Reader, keepNonblock bool) bool {
+	if !a.canDiscardSelected() {
+		return false
+	}
+
+	drainInput(tty, r)
+	if keepNonblock {
+		_ = syscall.SetNonblock(int(tty.Fd()), false)
+	}
+
+	a.rewriteItemText(a.cursor, a.itemLine(a.cursor, true)+"   Discard? [y/N]")
+	b, err := r.ReadByte()
+	if err != nil {
+		return false
+	}
+	return b == 'y' || b == 'Y'
+}
+
+func (a *app) discard() {
+	if len(a.items) == 0 || a.cursor < 0 || a.cursor >= len(a.items) {
+		return
+	}
+
+	it := a.items[a.cursor]
+	switch it.area {
+	case untracked:
+		a.runKeepingSection(untracked, "clean", "-fd", "--", it.path)
+	case unstaged:
+		a.runKeepingSection(unstaged, "restore", "--worktree", "--", it.path)
+	case staged:
+		if !hasHead() || it.status == "A" || it.status == "C" {
+			a.runKeepingSection(staged, "rm", "-f", "-r", "--", it.path)
+			return
+		}
+
+		args := []string{"restore", "--staged", "--worktree", "--"}
+		if it.origPath != "" {
+			args = append(args, it.origPath)
+		}
+		args = append(args, it.path)
+		a.runKeepingSection(staged, args...)
+	case unmerged:
+		a.err = "cannot discard unmerged paths"
+	case ignored:
+		a.err = "cannot discard ignored files"
 	}
 }
 

@@ -1,5 +1,8 @@
 ## Changelog
 
+### 0.2.1
+- add `x` discard file shortcut
+
 ### 0.2.0
 - Open selected file in `$EDITOR` with `o`.
 - Show full staged diff with `D`.

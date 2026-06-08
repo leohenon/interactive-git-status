@@ -74,6 +74,98 @@ func TestChangedFilesAreParsed(t *testing.T) {
 	})
 }
 
+func TestDiscardUntrackedFile(t *testing.T) {
+	withRepo(t, func(repo string) {
+		writeFile(t, repo, "tracked.txt", "one\n")
+		git(t, repo, "add", "tracked.txt")
+		git(t, repo, "commit", "-m", "init")
+		writeFile(t, repo, "untracked.txt", "new\n")
+
+		a := loadApp(t)
+		a.cursor = indexOfItem(t, a.items, untracked, "untracked.txt")
+		a.discard()
+
+		if _, err := os.Stat(filepath.Join(repo, "untracked.txt")); !os.IsNotExist(err) {
+			t.Fatalf("expected untracked file to be removed, stat err=%v", err)
+		}
+		if len(a.items) != 0 {
+			t.Fatalf("expected clean status after discard, got %#v", a.items)
+		}
+	})
+}
+
+func TestDiscardUnstagedChange(t *testing.T) {
+	withRepo(t, func(repo string) {
+		writeFile(t, repo, "tracked.txt", "one\n")
+		git(t, repo, "add", "tracked.txt")
+		git(t, repo, "commit", "-m", "init")
+		writeFile(t, repo, "tracked.txt", "two\n")
+
+		a := loadApp(t)
+		a.cursor = indexOfItem(t, a.items, unstaged, "tracked.txt")
+		a.discard()
+
+		got, err := os.ReadFile(filepath.Join(repo, "tracked.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "one\n" {
+			t.Fatalf("expected unstaged change to be restored, got %q", string(got))
+		}
+		if len(a.items) != 0 {
+			t.Fatalf("expected clean status after discard, got %#v", a.items)
+		}
+	})
+}
+
+func TestDiscardStagedAddRemovesFile(t *testing.T) {
+	withRepo(t, func(repo string) {
+		writeFile(t, repo, "tracked.txt", "one\n")
+		git(t, repo, "add", "tracked.txt")
+		git(t, repo, "commit", "-m", "init")
+		writeFile(t, repo, "staged.txt", "staged\n")
+		git(t, repo, "add", "staged.txt")
+
+		a := loadApp(t)
+		a.cursor = indexOfItem(t, a.items, staged, "staged.txt")
+		a.discard()
+
+		if _, err := os.Stat(filepath.Join(repo, "staged.txt")); !os.IsNotExist(err) {
+			t.Fatalf("expected staged file to be removed, stat err=%v", err)
+		}
+		if len(a.items) != 0 {
+			t.Fatalf("expected clean status after discard, got %#v", a.items)
+		}
+	})
+}
+
+func TestDiscardStagedRenameRestoresOriginal(t *testing.T) {
+	withRepo(t, func(repo string) {
+		writeFile(t, repo, "old.txt", "one\n")
+		git(t, repo, "add", "old.txt")
+		git(t, repo, "commit", "-m", "init")
+		git(t, repo, "mv", "old.txt", "new.txt")
+
+		a := loadApp(t)
+		a.cursor = indexOfItem(t, a.items, staged, "new.txt")
+		a.discard()
+
+		if _, err := os.Stat(filepath.Join(repo, "new.txt")); !os.IsNotExist(err) {
+			t.Fatalf("expected renamed file to be removed, stat err=%v", err)
+		}
+		got, err := os.ReadFile(filepath.Join(repo, "old.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "one\n" {
+			t.Fatalf("expected original file to be restored, got %q", string(got))
+		}
+		if len(a.items) != 0 {
+			t.Fatalf("expected clean status after discard, got %#v", a.items)
+		}
+	})
+}
+
 func TestAheadBehindAndDivergedStatus(t *testing.T) {
 	base := t.TempDir()
 	origin := filepath.Join(base, "origin.git")
@@ -464,6 +556,17 @@ func assertHasItem(t *testing.T, items []item, area area, status, path string) {
 		}
 	}
 	t.Fatalf("missing item area=%v status=%q path=%q in %#v", area, status, path, items)
+}
+
+func indexOfItem(t *testing.T, items []item, area area, path string) int {
+	t.Helper()
+	for i, item := range items {
+		if item.area == area && item.path == path {
+			return i
+		}
+	}
+	t.Fatalf("missing item area=%v path=%q in %#v", area, path, items)
+	return 0
 }
 
 func plain(s string) string {
